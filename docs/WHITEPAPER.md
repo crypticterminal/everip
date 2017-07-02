@@ -4,6 +4,8 @@ EVER/IP is a new way to think about building the Internet by redefining how pack
 
 This whitepaper aims to describe and outline the EVER/IP Networking Suite.
 
+*Work in Progress*
+
 ## Table of Contents
 
 1. [Introduction](#introduction)
@@ -65,15 +67,60 @@ Our work focuses on the Internet of Things and building a network of things, ins
 
 ## Routing Engine
 
+### Traditional Routing
+
+Traditional Routing requires not only devices with addresses, but also routers that forward packets closer to their destination. The routing functionality is provided by special equipment called a router.
+
+Routers are administrated by individuals and organisations who configure forwarding tables that determine the next hop for the packet to reach its destination. At each hop, the next router then repeats this process using its own configured forwarding tables, and so on until the packet reaches its destination.
+
+An IP Address is sufficient enough to route a packet through the network, although this is only because most of the complexity is pushed to the routers and the configuration of said routers. If a table is misconfigured, network "Black Holes" may develop and can only be fixed manually by the aid of network engineers.
+
+
 ![Traditional Routing](/docs/traditional-routing.png)
 
+
+### Label Switching / CJDNS Routing
+
+In a label-switched environment, forwarding decisions are not made via an address, but instead using a set of conditions provided by stack of instructions called "labels". Labels are fast and useful, but without information on which label goes to which address, the labels are useless. In a traditional Multiprotocol Label Switching (MPLS) environment, labels are configured much like routing tables. In experimental technologies such as CJDNS, DHTs are used to share routes amongst other peers. The down-side to this technique is two-fold: 1) lots of traffic must be dedicated to sharing these labels 2) there is no guarantee that any labels could be found.
+
+Incidentally, the developers behind CJDNS have as of the writing of this paper have abandoned peer-based sharing in support of a supernode/subnode-based design. This means that without core infrastructure, nodes have limited ability to discover routes to each other and places burden on supernodes to sustain uptime.
+
+
 ![MPLS/CJDNS Routing](/docs/label-based-routing.png)
+
+
+### EVER/IP Routing
+
+EVER/IP Routing is different from both Traditional Routing and Label Switching / CJDNS Routing for the following reasons:
+
+1. A node's graph ID encodes its location inside of an arbitrary connectivity graph.
+1. Based on this encoded graph ID, local information is used to forward packets.
+2. No routing or lookup tables must be configured to instigate routing.
+
+Source: https://github.com/connectFree/everip/blob/master/src/treeoflife/treeoflife.c
 
 ![EVER/IP Routing](/docs/everip-based-routing.png)
 
 ## Encryption Engine
 
+Source: https://github.com/connectFree/everip/blob/master/src/centraldogma/crypto.c
+
+The Encryption Engine engine is based on the routines provided in the libsodium library and utilises the XSalsa20 stream cipher with Poly1305 authentication. XSalsa20 is a stream cipher based upon Salsa20 but with a much longer nonce: 192 bits instead of 64 bits. Like Salsa20, XSalsa20 is immune to timing attacks and provides its own 64-bit block counter to avoid incrementing the nonce after each block.
+
+There is one stage dedicated to bootstrapping nodes; two stages required before two-way authenticated crypto-communication can commence; and the last stage (4) that signifies establishment. 
+
+1. Bootstrap - sent when the other party's key is not yet known
+2. Attention
+3. Key Exchange
+4. Established - packets are Poly1305 authenticated.
+
 ## Conclusion
+
+The cost of secure communications is still too high for appliance and social infrastructure manufacturers to harness. End-users still are afraid of networking and at many institutions, users are forbidden from accessing the network on their terms.
+
+The godfathers of the Internet believed in the concept of end-to-end connectivity [9] and because of the exhaustion of the IP Address space, it is harder than ever to directly connect nodes together.
+
+EVER/IP provides a clean slate and new thinking to a much required field of significant importance and we aim to make it the next standard of the Internet through transparency and dedication to our trade.
 
 
 [1]: https://en.wikipedia.org/wiki/B.A.T.M.A.N.
@@ -84,3 +131,5 @@ Our work focuses on the Internet of Things and building a network of things, ins
 [6]: https://github.com/cjdelisle/cjdns
 [7]: https://github.com/maidsafe
 [8]: http://domino.research.ibm.com/library/cyberdig.nsf/papers/492D147FCCEA752C8525768F00535D8A
+[9]: https://en.wikipedia.org/wiki/End-to-end_principle
+
