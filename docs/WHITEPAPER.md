@@ -95,9 +95,9 @@ Our work focuses on the Internet of Things and building a network of things, ins
 
 ## Protocol: Related Work
 
-In the wireless connectivity field, self-configuring protocols such as BATMAN [1], HSLS [2] and OLSR [3] are well known and deployed. These protocols try to relieve the configuration burden at the edge, but only by centralising configuration and management. Cisco Meraki [4] is a commercial solution that aims to help network administrators by keeping configuration in the cloud, but these solutions simply mask the core problems with more configuration.
+In the wireless connectivity field, self-configuring protocols such as BATMAN [3], HSLS [4] and OLSR [5] are well known and deployed. These protocols try to relieve the configuration burden at the edge, but only by centralising configuration and management. Cisco Meraki [6] is a commercial solution that aims to help network administrators by keeping configuration in the cloud, but these solutions simply mask the core problems with more configuration.
 
-Experimental solutions such as VRR [5], CJDNS [6] and SAFE Network [7] use Distributed Hash Tables (DHTs) to improve the scalability of routing. However, such DHT-based solutions assume that the nodes exist in a Euclidean space and rely an XOR metric. On the contrary, it has been shown that Euclidean spaces are not well suited to represent Internet nodes [8] and in our implementation EVER/IP assumes nodes interact within an arbitrary connectivity graph.
+Experimental solutions such as VRR [7], CJDNS [8] and SAFE Network [9] use Distributed Hash Tables (DHTs) to improve the scalability of routing. However, such DHT-based solutions assume that the nodes exist in a Euclidean space and rely an XOR metric. On the contrary, it has been shown that Euclidean spaces are not well suited to represent Internet nodes [10] and in our implementation EVER/IP assumes nodes interact within an arbitrary connectivity graph.
 
 ## Feature Set
 
@@ -161,19 +161,19 @@ There is one stage dedicated to bootstrapping nodes; two stages required before 
 
 The cost of secure communications is still too high for appliance and social infrastructure manufacturers to harness. End-users still are afraid of networking and at many institutions, users are forbidden from accessing the network on their terms.
 
-The godfathers of the Internet believed in the concept of end-to-end connectivity [9] and because of the exhaustion of the IP Address space, it is harder than ever to directly connect nodes together.
+The godfathers of the Internet believed in the concept of end-to-end connectivity [11] and because of the exhaustion of the IP Address space, it is harder than ever to directly connect nodes together.
 
 EVER/IP provides a clean slate and new thinking to a much required field of significant importance and we aim to make it the next standard of the Internet through transparency and dedication to our trade.
 
 [1]: http://www.itmedia.co.jp/news/articles/1212/12/news042.html
 [2]: https://en.wikipedia.org/wiki/List_of_assigned_/8_IPv4_address_blocks#List_of_assigned_.2F8_blocks
-[1]: https://en.wikipedia.org/wiki/B.A.T.M.A.N.
-[2]: https://en.wikipedia.org/wiki/Hazy_Sighted_Link_State_Routing_Protocol
-[3]: https://en.wikipedia.org/wiki/Optimized_Link_State_Routing_Protocol
-[4]: https://meraki.cisco.com/
-[5]: https://www.microsoft.com/en-us/research/publication/virtual-ring-routing-network-routing-inspired-dhts/
-[6]: https://github.com/cjdelisle/cjdns
-[7]: https://github.com/maidsafe
-[8]: http://domino.research.ibm.com/library/cyberdig.nsf/papers/492D147FCCEA752C8525768F00535D8A
-[9]: https://en.wikipedia.org/wiki/End-to-end_principle
+[3]: https://en.wikipedia.org/wiki/B.A.T.M.A.N.
+[4]: https://en.wikipedia.org/wiki/Hazy_Sighted_Link_State_Routing_Protocol
+[5]: https://en.wikipedia.org/wiki/Optimized_Link_State_Routing_Protocol
+[6]: https://meraki.cisco.com/
+[7]: https://www.microsoft.com/en-us/research/publication/virtual-ring-routing-network-routing-inspired-dhts/
+[8]: https://github.com/cjdelisle/cjdns
+[9]: https://github.com/maidsafe
+[10]: http://domino.research.ibm.com/library/cyberdig.nsf/papers/492D147FCCEA752C8525768F00535D8A
+[11]: https://en.wikipedia.org/wiki/End-to-end_principle
 
