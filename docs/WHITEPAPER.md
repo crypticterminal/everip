@@ -1,6 +1,6 @@
 # Whitepaper: The EVER/IP Networking Suite
 
-EVER/IP is a new way to think about building the Internet by redefining how packets are created and routed.
+EVER/IP is a new way to think about building the Internet by redefining how packets are created and routed and also redefining who *owns* the Internet, by making IP addresses backed by public/private cryptographic key pairs.
 
 This whitepaper aims to describe and outline the EVER/IP Networking Suite.
 
@@ -8,14 +8,17 @@ This whitepaper aims to describe and outline the EVER/IP Networking Suite.
 
 ## Table of Contents
 
-1. [Introduction](#introduction)
-2. [Related Work](#related-work)
-3. [Design Goals](#design-goals)
-4. [Implications](#implications)
-5. [Feature Set](#feature-set)
-6. [Routing Engine](#routing-engine)
-7. [Encryption Engine](#encryption-engine)
-8. [Conclusion](#conclusion)
+0. [Introduction](#introduction)
+0. [History and Background](#history-and-background)
+0. [IP Address as a Public Commodity](#ip-address-as-a-public-commodity)
+0. [ICO and Distribution](#ico-and-distribution)
+0. [Implications](#economic-implications)
+0. [Design Goals](#design-goals)
+0. [Protocol: Related Work](#protocol-related-work)
+0. [Feature Set](#feature-set)
+0. [Routing Engine](#routing-engine)
+0. [Encryption Engine](#encryption-engine)
+0. [Conclusion](#conclusion)
 
 ## Introduction
 
@@ -32,22 +35,56 @@ In this paper, we introduce a solution for a better Internet with the Elastic Ve
 
 This is finally possible due greatly in part to the iPhone® and other smartphones of its generation that have pushed for smaller, more efficient, more powerful processors and the FABs such as TSMC in Taiwan who have raced to scale production. EVER/IP aims to unleash this power, bringing-down the cost of communications worldwide and beyond.
 
+## History and Background
 
-## Related Work
+The Japanese government (and perhaps other localities) have very strict laws on Internet security, but many realise that the Internet itself is insecure by its very nature. EVER (the Elastic Versatile Encrypted Relay) as a protocol was first developed in 2011 by Kristopher Tate in Kyoto, Japan and was started after receiving a very rare "Administrative Guidance" or Gyosei-Shido from the government of Japan regarding Internet security.
 
-In the wireless connectivity field, self-configuring protocols such as BATMAN [1], HSLS [2] and OLSR [3] are well known and deployed. These protocols try to relieve the configuration burden at the edge, but only by centralising configuration and management. Cisco Meraki [4] is a commercial solution that aims to help network administrators by keeping configuration in the cloud, but these solutions simply mask the core problems with more configuration.
+The first release was on the 12th of December, 2012 [1]
 
-Experimental solutions such as VRR [5], CJDNS [6] and SAFE Network [7] use Distributed Hash Tables (DHTs) to improve the scalability of routing. However, such DHT-based solutions assume that the nodes exist in a Euclidean space and rely an XOR metric. On the contrary, it has been shown that Euclidean spaces are not well suited to represent Internet nodes [8] and in our implementation EVER/IP assumes nodes interact within an arbitrary connectivity graph.
+Today, EVER/IP is part of a working group inside of the Japanese Ministry of Economy, Trade and Industry (METI) to bring down the cost of communications by autonomizing network discovery and reach.
 
+## IP Address as a Public Commodity
+
+> The Internet must always remain open, yet commercially viable.
+>
+> The humble IP Address should become a tradable commodity.
+> - kristopher tate
+
+Net neutrality is a very specific, yet important topic. The problem is strictly tied to Internet service providers and governments regulating the Internet. We at connectFree believe that this is possible entirely because the addresses or "digital land" on the Internet is owned entirely by commercial entities.
+
+While we as well are a commercial entity, our goals are much more inline with computer makers and digital artisans -- we want to enable users to own their devices and property and we strongly believe that an IP address should be your property.
+
+To reiterate, today's networks are not independent and whole blocks of network addresses can be owned by large companies.
+
+For example, Apple Inc. owns all IP addresses that start with the number 17 [2]. Ford Motor Company owns all IP addresses that start with the number 19 [2]. Each company owns 16,581,375 addresses. There are only 4,294,967,296 ip addresses available on the Internet, which means that these companies own approximately 1/256th of the entire Internet.
+
+In contrast, EVER/IP assigns one IP Address to one device, for the lifetime of the device. The IP Address cannot be revoked later and if the device is destroyed, the IP Address is lost with the device. EVER/IP supports up to 2<sup>120</sup> (1,329,227,995,784,915,872,903,807,060,280,344,576) IP Addresses. This is 309,485,009,821,345,068,724,781,056 times more IP Addresses than what the current Internet supports.
+
+That is why we believe that it is important for IP Addresses to be a public commodity.
+
+## ICO and Distribution
+
+If we are to create a truly distributed, authenticated and secure Internet, it needs to be commercially viable. Today's Internet as infrastructure is commercially viable and so are the properties that run above it.
+
+### ICO
+
+Our answer to this problem is to "Tokenize" the IP Address and sell it to distributors and also via an ICO (Initial Coin Offering). This creates incentives for commercial entities to bundle this new connectivity software with their devices and to market the solution to their users.
+
+### Distribution
+
+There are two modes of distribution: via our Ethereum "IPToken" and also via a commercial distributor network.
+
+We have made physical labels to identify and track IP Addresses and Ethereum IPTokens will be traceable for these physical labels and license files.
 
 ## Design Goals
 
-1. Create an Internet that could work on multiple planets.
-2. Create an Internet without dedicated core routing infrastructure.
-3. Maintain backwards compatibility with existing IP products and solutions.
-4. Provide a solution that is both secure and elastic, removing the need for network administrators.
+0. Create an Internet that could work on multiple planets.
+0. Create an Internet that can be owned by both things and people.
+0. Create an Internet without dedicated core routing infrastructure.
+0. Maintain backwards compatibility with existing IP products and solutions.
+0. Provide a solution that is both secure and elastic, removing the need for network administrators.
 
-## Implications
+## Economic Implications
 
 The implications of our work is that if we succeed, the cost for communication will greatly drop. We see this as a boon for the global economy and perhaps the start of a multi-planetary economy. The current Internet is too centralised for its own good and it requires the help of large corporations to mediate.
 
@@ -55,6 +92,12 @@ Let it be known that we are not against telecommunication corporations. Instead,
 
 Our work focuses on the Internet of Things and building a network of things, instead of simply placing Things on the Internet. Many corporations (especially in Japan) who produce social infrastructure technologies and solutions cannot pay for monthly Internet access per device. Their business models require that any service or part must be incorporated into its Bill of Materials (BOM). We see a huge gap in this market that EVER/IP is poised to take part in. It is our great hope that EVER/IP helps to create a new connected economy, both on Earth and beyond.
 
+
+## Protocol: Related Work
+
+In the wireless connectivity field, self-configuring protocols such as BATMAN [1], HSLS [2] and OLSR [3] are well known and deployed. These protocols try to relieve the configuration burden at the edge, but only by centralising configuration and management. Cisco Meraki [4] is a commercial solution that aims to help network administrators by keeping configuration in the cloud, but these solutions simply mask the core problems with more configuration.
+
+Experimental solutions such as VRR [5], CJDNS [6] and SAFE Network [7] use Distributed Hash Tables (DHTs) to improve the scalability of routing. However, such DHT-based solutions assume that the nodes exist in a Euclidean space and rely an XOR metric. On the contrary, it has been shown that Euclidean spaces are not well suited to represent Internet nodes [8] and in our implementation EVER/IP assumes nodes interact within an arbitrary connectivity graph.
 
 ## Feature Set
 
@@ -122,7 +165,8 @@ The godfathers of the Internet believed in the concept of end-to-end connectivit
 
 EVER/IP provides a clean slate and new thinking to a much required field of significant importance and we aim to make it the next standard of the Internet through transparency and dedication to our trade.
 
-
+[1]: http://www.itmedia.co.jp/news/articles/1212/12/news042.html
+[2]: https://en.wikipedia.org/wiki/List_of_assigned_/8_IPv4_address_blocks#List_of_assigned_.2F8_blocks
 [1]: https://en.wikipedia.org/wiki/B.A.T.M.A.N.
 [2]: https://en.wikipedia.org/wiki/Hazy_Sighted_Link_State_Routing_Protocol
 [3]: https://en.wikipedia.org/wiki/Optimized_Link_State_Routing_Protocol
