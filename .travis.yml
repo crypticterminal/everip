@@ -3,6 +3,12 @@ language: C
 compiler:
   - clang
 
+addons:
+  sonarcloud:
+    organization: "connectfree-oss"
+    token:
+      secure: "mZSnvpFB6VtJRX+sKNxaZ7Z1iZ7iObi8FLx30plTwIPtHVAajSI4emMLYVvgVzvYRrSekFXXKVU9i6RfZMXKvYxdG+FbxINhS47xpQCj59UcDLsxKfuDyh3jABhZ4vmw7wMk4heF+cTYPEvKXcYJHBmSbz68ZWTyURmKQFNL9LIckNwnB9MBdUv3z79Z8U9O3vticneHnPl6PlWxDjBTy8VyxPSJQzJr9MI5Wi+7PmkOxP+/QGfGAF+SxI/X0ejNTiKlJCbtMdyL1wApAUv6zXz9E8Bgsj1i92fYGQDQjqLjpGLKQkI/lngLmWvqnBTanr+MBqPUEwLxwR/8GGIzv7+iUyyQMY/b6bQGr3BqtUFXTw5DbxxYbrh24Xor7ee0TkXQjzL8G8zq2UpAlCoJn3C0C+XI+kitpTc+OIyMF4euu4kfXyvf2yZaRSK0ImqvmhcENEI3LpfetBAii5QtLbyH7/RA62qQT3TkLQjU0O3qq8BZkVNZ7NZO45ue1P2A3uFjQRdthD3OFsgluyCSgrB7TXRkNYUi3ZuRbVP7xZoItjSoAR+q+d2JBLuG+dTovCssklO1sG73tmJHVlP+v3yrwa3tSaJuIfiptZuC+Oru9mus1rrc75aj2AcXkU+hTkq6EiP0w96T2NzEbjqX6vvd0J97rvnYVCZeaNYO5X4="
+
 before_install:
   - git clone https://github.com/connectFree/everip.git
   - git clone https://github.com/connectFree/libre.git
@@ -19,4 +25,10 @@ install:
   - cd ../everip
   
 script:
-  - SIGNED_CLA_LICENSE=1 LIBSODIUM_PATH=../build_libsodium make test
+  - SIGNED_CLA_LICENSE=1 LIBSODIUM_PATH=../build_libsodium build-wrapper-linux-x86-64 --out-dir bw-output make
+  - make test
+  - sonar-scanner
+
+cache:
+  directories:
+    - '$HOME/.sonar/cache'
