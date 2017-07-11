@@ -1305,8 +1305,6 @@ int treeoflife_init( struct treeoflife **treeoflifep, uint8_t public_key[KEY_LEN
 
   *treeoflifep = t;
 
-  if (err)
-    t = mem_deref(t);
   return err;
 }
 
