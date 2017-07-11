@@ -26,7 +26,7 @@ install:
   
 script:
   - SIGNED_CLA_LICENSE=1 LIBSODIUM_PATH=../build_libsodium build-wrapper-linux-x86-64 --out-dir bw-output make
-  - make test
+  - SIGNED_CLA_LICENSE=1 LIBSODIUM_PATH=../build_libsodium make test
   - sonar-scanner
 
 cache:
