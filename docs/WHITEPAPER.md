@@ -1,10 +1,16 @@
-# Whitepaper: The EVER/IP Networking Suite
+# The EVER/IP Networking Suite
 
-EVER/IP is a new way to think about building the Internet by redefining how packets are created and routed and also redefining who *owns* the Internet, by making IP addresses backed by public/private cryptographic key pairs.
 
-This whitepaper aims to describe and outline the EVER/IP Networking Suite.
+**White Paper, July 11, 2017**
 
-*Work in Progress*
+**Abstract:** We present EVER/IP: a new way to think about building the Internet by redefining who *owns* the Internet. Up until today, the Internet has lacked a truly distributed means of deciding who owns each IP address on the Internet. It instead relies on an archaic system of bureaucratic organizations known as the "Internet Assigned Numbers Authority" or IANA which has costly operations throughout the world. We claim that IP Addresses can be backed by public/private cryptographic key pairs and thus IP addresses may become established as property. Many experimental routing technologies  of today are DHT-backed and assume that nodes exist in a Euclidean space, relying an XOR metric to calculate distance. It has been shown that Euclidean spaces are not well suited to represent Internet nodes and EVER/IP instead represents nodes on an arbitrary connectivity graph, where based on how relationship is encoded, only local information is used to forward packets.
+
+Copyright © 2017 kristopher tate & connectFree Corporation
+
+Without permission, anyone may use, reproduce or distribute any material in this white paper for non-commercial and educational use (i.e., other than for a fee or for commercial purposes) provided that the original source and the applicable copyright notice are cited.
+
+**DISCLAIMER:** This EVER/IP Networking Suite White Paper is for information purposes only. kristopher tate and/or connectFree do not guarantee the accuracy of or the conclusions reached in this white paper, and this white paper is provided “as is”. kristopher tate and/or connectFree do not make and expressly disclaim all representations and warranties, express, implied, statutory or otherwise, whatsoever, including, but not limited to: (i) warranties of merchantability, fitness for a particular purpose, suitability, usage, title or noninfringement; (ii) that the contents of this white paper are free from error; and (iii) that such contents will not infringe third-party rights. kristopher tate and/or connectFree and its affiliates shall have no liability for damages of any kind arising out of the use, reference to, or reliance on this white paper or any of the content contained herein, even if advised of the possibility of such damages. In no event will kristopher tate and/or connectFree or its affiliates be liable to any person or entity for any damages, losses, liabilities, costs or expenses of any kind, whether direct or indirect, consequential, compensatory, incidental, actual, exemplary, punitive or special for the use of, reference to, or reliance on this white paper or any of the content contained herein, including, without limitation, any loss of business, revenues, profits, data, use, goodwill or other intangible losses.
+
 
 ## Table of Contents
 
