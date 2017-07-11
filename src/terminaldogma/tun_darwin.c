@@ -93,15 +93,6 @@ static void tun_read_handler(int flags, void *arg)
 			, mb->size - EVER_OUTWARD_MBE_POS
 			);
 	if (n < 0) {
-		err = errno;
-
-		if (EAGAIN == err)
-			goto out;
-
-#ifdef EWOULDBLOCK
-		if (EWOULDBLOCK == err)
-			goto out;
-#endif
 		goto out;
 	}
 
