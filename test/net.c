@@ -65,6 +65,8 @@ int test_network(void)
 
 	ASSERT_EQ(1, change_count);
 
+  (void)net_check(net);
+
  out:
 	mem_deref(net);
 	return err;
