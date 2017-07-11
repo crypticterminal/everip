@@ -3,7 +3,7 @@ language: C
 compiler:
   - clang
 
-jdk: oraclejdk8
+dist: trusty
 
 addons:
   sonarcloud:
