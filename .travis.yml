@@ -3,6 +3,8 @@ language: C
 compiler:
   - clang
 
+jdk: oraclejdk8
+
 addons:
   sonarcloud:
     organization: "connectfree-oss"
