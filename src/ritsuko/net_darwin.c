@@ -36,13 +36,6 @@ static void _read_handler(int flags, void *arg)
 
 	n = read(ne->fd, msg, 2048);
 	if (n < 0) {
-		err = errno;
-		if (EAGAIN == err)
-			goto out;
-#ifdef EWOULDBLOCK
-		if (EWOULDBLOCK == err)
-			goto out;
-#endif
 		goto out;
 	}
 

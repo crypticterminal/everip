@@ -68,15 +68,6 @@ static struct csock *_from_terminaldogma( struct csock *csock
     n = write(tun->fd, mbuf_buf(mb), mbuf_get_left(mb));
 
 	if (n < 0) {
-		err = errno;
-
-		if (EAGAIN == err)
-			goto out;
-
-#ifdef EWOULDBLOCK
-		if (EWOULDBLOCK == err)
-			goto out;
-#endif
 		goto out;
 	}
 

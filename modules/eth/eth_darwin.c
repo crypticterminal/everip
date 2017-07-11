@@ -270,7 +270,7 @@ static int register_eth_conduit( const char ifname[IFNAMSIZ]
     }
     {
 	    struct ifreq ifr = { .ifr_name = { 0 } };
-	    strcpy(ifr.ifr_name, ifname);
+	    strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
 	    if (0 != ioctl(eth_c->fd, BIOCSETIF, &ifr)) {
 	        warning( "ioctl(BIOCSETIF, [%s]) [%s]"
 	        	   , ifname
