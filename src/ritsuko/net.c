@@ -134,8 +134,9 @@ bool net_check(struct network *net)
 	struct sa laddr6 = net->laddr6;
 	bool change = false;
 
-	if (!net)
-		return false;
+	if (!net) {
+		goto out;
+	}
 
 	/*net_getifaddrs(_if_item_cb, NULL);*/
 
@@ -161,6 +162,7 @@ bool net_check(struct network *net)
 		     &laddr6, &net->laddr6);
 	}
 
+out:
 	return change;
 }
 

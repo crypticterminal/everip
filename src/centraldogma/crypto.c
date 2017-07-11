@@ -314,7 +314,7 @@ void caengine_session_setauth( struct caengine_session *session
     if (!pword && (session->pword || session->auth_type)) {
         session->pword = mem_deref(session->pword);
         session->auth_type = 0;
-    } else if (!session->pword || strcmp(session->pword, pword)) {
+    } else if (!session->pword || (pword && strcmp(session->pword, pword))) {
         session->login = mem_deref(session->login);
         session->pword = mem_deref(session->pword);
         str_dup(&session->pword, pword);
@@ -343,7 +343,7 @@ int caengine_session_new( struct caengine_session **sessionp
         return EINVAL;
 
     session = mem_zalloc(sizeof(*session), caengine_session_destructor);
-    if (!c)
+    if (!session)
         return ENOMEM;
 
     caengine_session_reset(session); /* nen no tame */
@@ -890,7 +890,7 @@ static void caengine_authtoken_destructor(void *data)
 static inline struct caengine_authtoken *
 caengine_authtoken_get( struct caengine *caengine
                       , uint8_t chal_type
-                      , uint8_t chal_lookup[7] )
+                      , uint8_t chal_lookup[8] )
 {
     struct le *le;
 

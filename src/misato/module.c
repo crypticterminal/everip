@@ -36,18 +36,22 @@ static const struct mod_export *find_module(const struct pl *pl)
 	struct pl name;
 	uint32_t i;
 
-	if (re_regex(pl->p, pl->l, "[^.]+.[^]*", &name, NULL))
+	if (re_regex(pl->p, pl->l, "[^.]+.[^]*", &name, NULL)) {
 		name = *pl;
+	}
 
 	for (i=0; ; i++) {
 		const struct mod_export *me = mod_table[i];
-		if (!me)
-			return NULL;
-		if (0 == pl_strcasecmp(&name, me->name))
+		if (!me) {
+			goto out;
+		}
+		if (0 == pl_strcasecmp(&name, me->name)) {
 			return me;
+		}
 	}
 
-	return NULL;
+out:
+	return NULL; 
 }
 #endif
 

@@ -244,7 +244,7 @@ static inline void _wireheader_setpenalty(struct rmap_wireheader *w, uint16_t p)
 static inline void _wireheader_setsuppresson(struct rmap_wireheader *w, bool s)
 {
     w->cas = w->cas >> 1 << 1;
-    w->cas |= s;
+    w->cas |= (s ? 1 : 0);
 }
 
 struct PACKONE sess_wireheader
@@ -486,10 +486,10 @@ struct caengine_session {
   struct caengine_replay_guard replay_guard;
 
   char *login;
-    char *pword;
-    int auth_type : 8;
+  char *pword;
+  uint8_t auth_type;
 
-    uint32_t nonce_next;
+  uint32_t nonce_next;
   bool is_initiator : 1;
   bool req_auth : 1;
   bool established : 1;
