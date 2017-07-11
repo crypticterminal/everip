@@ -24,14 +24,9 @@ int test_conduits(void)
 {
   int err = 0;
   /* for code coverage */
-#if !defined(WIN32) && !defined(CYGWIN)
-  module_preload("stdio");
-#else
-  module_preload("wincon");
-#endif
-  module_preload("dcmd");
   module_preload("udp");
-  module_preload("eth");
+  /*root only*/
+  //module_preload("eth");
   mod_close();
   return err;
 }

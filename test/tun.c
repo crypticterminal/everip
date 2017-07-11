@@ -22,7 +22,7 @@
 
 int test_tun(void)
 {
-  int err;
+  int err = 0;
   struct sa tmp_sa;
   struct tunif *tunif = NULL;
   struct netevent *netevent = NULL;
