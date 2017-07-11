@@ -6,3 +6,4 @@ test.o
 *stamp
 *.previous
 everip
+*.gcov
