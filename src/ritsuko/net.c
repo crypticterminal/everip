@@ -130,13 +130,16 @@ static bool _if_item_cb( const char *ifname
 
 bool net_check(struct network *net)
 {
-	struct sa laddr = net->laddr;
-	struct sa laddr6 = net->laddr6;
+	struct sa laddr;
+	struct sa laddr6;
 	bool change = false;
 
 	if (!net) {
 		goto out;
 	}
+
+	laddr = net->laddr;
+	laddr6 = net->laddr6;
 
 	/*net_getifaddrs(_if_item_cb, NULL);*/
 

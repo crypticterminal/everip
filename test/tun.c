@@ -24,8 +24,8 @@ int test_tun(void)
 {
   int err;
   struct sa tmp_sa;
-  struct tunif *tunif;
-  struct netevent *netevent;
+  struct tunif *tunif = NULL;
+  struct netevent *netevent = NULL;
 
   sa_init(&tmp_sa, AF_INET6);
   sa_set_str(&tmp_sa, "fc1c:7124:2ab8:687b:4e3e:fac1:8de6:1dc0", 0);
