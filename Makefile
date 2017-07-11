@@ -218,11 +218,24 @@ $(BUILD): Makefile
 .PHONY: clean
 clean:
 	@rm -rf $(BIN) $(MOD_BINS) $(SHARED) $(BUILD) $(TEST_BIN) \
-		$(STATICLIB) libeverip.pc
+		$(STATICLIB) libeverip.pc coverage rm *.gcov
 	@rm -f *stamp \
 	`find . -name "*.[od]"` \
 	`find . -name "*~"` \
 	`find . -name "\.\#*"`
+	@find . -name "*.gcda" -exec rm {} \;
+	@lcov --directory . --zerocounters
+
+.PHONY: lcov
+lcov:
+	@mkdir -p coverage
+	@lcov --compat-libtool --directory . --capture --output-file coverage/app.info  
+	@genhtml -o coverage/ coverage/app.info 
+
+.PHONY: gcov
+gcov:
+	-@rm *.gcov
+	@find . -name "*.c" -exec sh -c 'gcov {} -o "build-x86_64/$$(dirname {})"' \;
 
 #I HATE PERL
 version:
