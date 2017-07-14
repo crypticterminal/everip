@@ -13,6 +13,7 @@ Here we aim to provide you with some answers to your questions.
 - [POLICY](#policy)
   * [Does EVER/IP solve Net Neutrality?](#does-everip-solve-net-neutrality)
 - [TECHNICAL](#technical)
+  * [Why use IPv6 an an API? Why not make your own API?](#why-use-ipv6-an-an-api-why-not-make-your-own-api)
   * [How is EVER/IP different from traditional Internet routing?](#how-is-everip-different-from-traditional-internet-routing)
   * [Is there a minimum number of devices that have to be online for EVER/IP to work?](#is-there-a-minimum-number-of-devices-that-have-to-be-online-for-everip-to-work)
   * [Is EVER/IP a Static or Global address?](#is-everip-a-static-or-global-address)
@@ -86,6 +87,16 @@ iOS is currently under heavy development.
 A network that is built on EVER/IP would provide neutral footing for all those who partake because it is built on algorithms and cryptography instead of a social bureaucratic model where variables in the system can be controlled to the benefit of a few.
 
 # TECHNICAL
+
+## Why use IPv6 an an API? Why not make your own API?
+
+EVER/IP is not IPv6, but we use IPv6 as an API to connect existing applications (VoIP, Web, Browsers, Games, SAMBA/File Sharing) to the EVER/IP routing technology.
+
+Even though we do have our own advanced API, it would require having application developers recompile their applications and it would require developers to engineer their own compatibility layer.
+
+Piggybacking off of IPv6 is smart for the future of the Internet because it does not waste the time developed in porting applications to IPv6.
+
+EVER/IP addresses are not routed on the normal internet and so if they do not have a public/private key backed EVER/IP address and EVER/IP software, they will not be able to connect.
 
 ## How is EVER/IP different from traditional Internet routing?
 
