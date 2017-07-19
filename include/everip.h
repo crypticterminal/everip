@@ -180,13 +180,13 @@ struct PACKONE mbuf_ext {
 #define csock_addr_cpycsa(mb, new_csaddr) \
   { \
   mbuf_set_pos(mb, 0); \
-  struct csock_addr *__csaddr = (struct csock_addr *)mbuf_buf( (mb) ); \
+  struct csock_addr *__csaddr = (struct csock_addr *)(void *)mbuf_buf( (mb) ); \
   /*memset(csaddr, 0, sizeof(struct csock_addr));*/ \
   /*debug("(new_csaddr)->len = %u|%u\n", (new_csaddr)->len, (new_csaddr)->a.sa.len);*/ \
   memcpy(__csaddr, (new_csaddr), sizeof(struct csock_addr)); \
   }
 
-struct PACKONE csock_addr {
+struct csock_addr {
   #define CSOCK_ADDR_LENTOP (4+2+2)
   #define CSOCK_ADDR_LENMAC (CSOCK_ADDR_LENTOP+6)
   uint32_t hash;
@@ -430,6 +430,7 @@ struct caengine {
   uint8_t my_ipv6[16];
   uint8_t my_pubkey[32];
   uint8_t my_prvkey[32];
+  uint8_t my_signkeys[64]; /* top = private; bottom = public */
   struct list sessions;
   struct list authtokens;
 
@@ -545,6 +546,11 @@ int caengine_address_frompubkey(uint8_t out[16], const uint8_t in[32]);
 
 int caengine_debug(struct re_printf *pf, struct caengine *c);
 
+void cryptosign_skpk_fromcurve25519(uint8_t skpk[64], uint8_t sk[32]);
+inline void cryptosign_pk_fromskpk(uint8_t pk[32], uint8_t skpk[64]);
+void cryptosign_bytes(uint8_t skpk[64], uint8_t *m, size_t mlen);
+int cryptosign_bytes_verify(uint8_t pk[32], uint8_t *s, uint8_t *m, size_t mlen);
+
 /*
  * Pinger
  */
@@ -584,6 +590,47 @@ int mrpinger_ping( struct mrpinger *pinger
 int mrpinger_pong( struct mrpinger *pinger
          , uint32_t version
          , struct pl *_pl );
+
+/*
+ * AT Field
+ */
+
+#define ATFIELD_MODE_BLANK 0
+#define ATFIELD_MODE_BLACK 1<<0
+#define ATFIELD_MODE_WHITE 1<<1
+#define ATFIELD_MODE_LOCKL 1<<2 /* license lock */
+
+struct atfield_item {
+  struct le le;
+  union {
+      struct {
+          uint32_t three_be;
+          uint32_t four_be;
+          uint32_t one_be;
+          uint32_t two_be;
+      } i;
+      struct {
+          uint64_t two_be;
+          uint64_t one_be;
+      } l;
+      uint8_t b[ADDR_SEARCH_TARGET_SIZE];
+  } ip6;
+  uint8_t mode;
+};
+
+struct atfield {
+  struct list list;
+  uint8_t white;
+};
+
+int atfield_init( struct atfield **atfieldp );
+int atfield_remove( struct atfield *at , uint8_t ip6[ADDR_SEARCH_TARGET_SIZE] );
+uint8_t atfield_check( struct atfield *at , uint8_t ip6[ADDR_SEARCH_TARGET_SIZE] );
+int atfield_add( struct atfield *at , uint8_t ip6[ADDR_SEARCH_TARGET_SIZE] , uint8_t mode );
+void atfield_gowhite( struct atfield *at, bool gowhite);
+
+int atfield_debug(struct re_printf *pf, const struct atfield *atfield);
+
 
 /*
  * Conduit Peer
@@ -973,6 +1020,7 @@ struct mrpinger *everip_mrpinger(void);
 struct commands *everip_commands(void);
 struct caengine *everip_caengine(void);
 struct conduits *everip_conduits(void);
+struct atfield *everip_atfield(void);
 struct treeoflife *everip_treeoflife(void);
 
 void everip_udpport_set(uint16_t port);

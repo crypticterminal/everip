@@ -4,6 +4,7 @@ SRCS	+= geofront/conduits.c
 
 #central dogma
 SRCS	+= centraldogma/crypto.c
+SRCS	+= centraldogma/sign.c
 #SRCS	+= centraldogma/relaymap.c
 #SRCS	+= centraldogma/manager.c
 #SRCS	+= centraldogma/cmdcenter.c
@@ -49,6 +50,7 @@ SRCS	+= ritsuko/net_linux.c
 endif
 
 #tree of life
+SRCS	+= treeoflife/atfield.c
 SRCS	+= treeoflife/treeoflife.c
 
 ifneq ($(STATIC),)

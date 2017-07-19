@@ -120,20 +120,24 @@ struct stack_needle {
     bool setup;
     bool inloop;
     bool end;
+    int data;
 };
 
 static int stack_step(struct stack_needle *needle)
 {
     uint8_t b;
-    if (needle->end) return 0;
+    if (needle->end) return 1;
     if (!needle->setup) {
         needle->setup = true;
         needle->height = stack_height_get(needle->binrep);
-        if (!needle->height) {
-            needle->end = true;
-            return 0;
-        }
         needle->pos = 1;
+    }
+    if (!needle->height) {
+        if (++needle->i == 1) {
+          needle->end = true;
+        }
+        needle->data = 0;
+        return 0;
     }
     if (needle->inloop) {
         goto loop;
@@ -170,7 +174,8 @@ loop:
             //}
             ++needle->i;
             //needle->start = 1;
-            return b ? needle->height : -1 * needle->height;
+            needle->data = b ? needle->height : -1 * needle->height;
+            return 0;
         };
         needle->inloop = false;
         needle->pos += needle->stop;
@@ -199,9 +204,8 @@ static int stack_link_count(uint8_t binrep[ROUTE_LENGTH])
 static int stack_linf_diff(uint8_t left[ROUTE_LENGTH], uint8_t right[ROUTE_LENGTH], int *places)
 {
     int i = 0;
-    int score = 0;
-    int lval = 0;
-    int rval = 0;
+    int tmp = 0;
+    int out = 0;
     struct stack_needle lneedle;
     struct stack_needle rneedle;
 
@@ -211,37 +215,41 @@ static int stack_linf_diff(uint8_t left[ROUTE_LENGTH], uint8_t right[ROUTE_LENGT
     lneedle.binrep = left;
     rneedle.binrep = right;
 
-    lval = stack_step(&lneedle);
-    rval = stack_step(&rneedle);
-    score += abs(lval-rval);
+    stack_step(&lneedle);
+    stack_step(&rneedle);
+    tmp = abs(lneedle.data - rneedle.data);
+    if (tmp > out)
+      out = tmp;
     i++;
     while (!lneedle.end && !rneedle.end ) {
-        lval = stack_step(&lneedle);
-        rval = stack_step(&rneedle);
-        if (!lval || !rval) break;
+        if (stack_step(&lneedle))
+          break;
+        if (stack_step(&rneedle))
+          break;
         /*debug("lval = %d; rval = %d\n", lval, rval);*/
-        score += abs(lval-rval);
+        tmp = abs(lneedle.data - rneedle.data);
+        if (tmp > out)
+          out = tmp;
         i++;
     }
     if (places)
       *places = i;
-    return score;
+    return out;
 }
 
 static int stack_debug(struct re_printf *pf, const uint8_t *binrep)
 {
     int err = 0;
-    int val = 0;
     struct stack_needle needle;
     memset(&needle, 0, sizeof(struct stack_needle));
     needle.binrep = binrep;
     err |= re_hprintf(pf, "[");
-    val = stack_step(&needle);
-    err |= re_hprintf(pf, "%d", val);
+    stack_step(&needle);
+    err |= re_hprintf(pf, "%s%d", (needle.data>0?"+":""), needle.data);
     while (!needle.end) {
-      val = stack_step(&needle);
-      if (!val) break;
-      err |= re_hprintf(pf, "%s%d", (val>0?"+":""), val);
+      if (stack_step(&needle))
+        break;
+      err |= re_hprintf(pf, "%s%d", (needle.data>0?"+":""), needle.data);
     }
     err |= re_hprintf(pf, "]");
 
@@ -745,7 +753,7 @@ void treeoflife_msg_recv( struct treeoflife *t
       rootcmp = memcmp(tmp_root, zone->root, KEY_LENGTH);
 
       if (!we_are_set_parent
-        && (rootcmp > 0) ) /*|| (!rootcmp && tmp_height + weight < zone->height)*/
+        && ( (rootcmp > 0) || (!rootcmp && tmp_height + weight < zone->height) ) )
       {
         /* zone kanri */
         memcpy(zone->root, tmp_root, KEY_LENGTH);
@@ -1034,26 +1042,30 @@ dht_redirect_or_stay:
 process_pkt:
     if (t->tun_cb) {
       mbuf_advance(mb, -(WIRE_IPV6_HEADER_LENGTH));
-        struct _wire_ipv6_header *ihdr = \
+      struct _wire_ipv6_header *ihdr = \
             (struct _wire_ipv6_header *)mbuf_buf(mb);
 
-          memset(ihdr, 0, WIRE_IPV6_HEADER_LENGTH - 32);
+      memset(ihdr, 0, WIRE_IPV6_HEADER_LENGTH - 32);
 
-        ((uint8_t*)ihdr)[0] |= (6) << 4;
-        ihdr->hop = 42;
-        ihdr->next_header = type;
-        ihdr->payload_be = arch_htobe16(mbuf_get_left(mb) - WIRE_IPV6_HEADER_LENGTH);
+      ((uint8_t*)ihdr)[0] |= (6) << 4;
+      ihdr->hop = 42;
+      ihdr->next_header = type;
+      ihdr->payload_be = arch_htobe16(mbuf_get_left(mb) - WIRE_IPV6_HEADER_LENGTH);
 
-        ihdr->src[0] = 0xFC;
-        ihdr->dst[0] = 0xFC;
+      ihdr->src[0] = 0xFC;
+      ihdr->dst[0] = 0xFC;
       memcpy(ihdr->src+1, sentkey, KEY_LENGTH);
-        memcpy(ihdr->dst+1, t->selfkey, KEY_LENGTH);
+      memcpy(ihdr->dst+1, t->selfkey, KEY_LENGTH);
 
-        mbuf_advance(mb, -4);
-        ((uint16_t*)(void *)mbuf_buf(mb))[0] = 0;
-        ((uint16_t*)(void *)mbuf_buf(mb))[1] = 7680;
+      if (!atfield_check(everip_atfield(), ihdr->src)) {
+        return;
+      }
 
-        t->tun_cb(t, mb, t->tun_cb_arg);
+      mbuf_advance(mb, -4);
+      ((uint16_t*)(void *)mbuf_buf(mb))[0] = 0;
+      ((uint16_t*)(void *)mbuf_buf(mb))[1] = 7680;
+
+      t->tun_cb(t, mb, t->tun_cb_arg);
     }
 
 
@@ -1305,6 +1317,8 @@ int treeoflife_init( struct treeoflife **treeoflifep, uint8_t public_key[KEY_LEN
 
   *treeoflifep = t;
 
+  if (err)
+    t = mem_deref(t);
   return err;
 }
 

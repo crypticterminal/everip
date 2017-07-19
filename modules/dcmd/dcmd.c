@@ -353,7 +353,66 @@ static int cmd_caengine_debug(struct re_printf *pf, void *unused)
 	return caengine_debug(pf, everip_caengine());
 }
 
+static int cmd_atfield_debug(struct re_printf *pf, void *unused)
+{
+	(void)unused;
+	return atfield_debug(pf, everip_atfield());
+}
+
+static int cmd_atfield_action(struct re_printf *pf, void *arg)
+{
+	const struct cmd_arg *carg = arg;
+	int err = 0;
+	struct sa laddr;
+
+  if (sa_set_str(&laddr, carg->prm, 0)) {
+  	err = EINVAL;
+		err |= re_hprintf(pf, "error: %s is an invalid ipv6 address\n", carg->prm);
+		goto out;
+	}
+
+	if (carg->complete) {
+		switch (carg->key) {
+			case '+': /* add to black */
+				atfield_add(everip_atfield(), (uint8_t *)&laddr.u.in6.sin6_addr, ATFIELD_MODE_BLACK);
+				err |= re_hprintf(pf, "%j was added to the black list\n", &laddr);
+				break;
+			case '*': /* add to white */
+				atfield_add(everip_atfield(), (uint8_t *)&laddr.u.in6.sin6_addr, ATFIELD_MODE_WHITE);
+				err |= re_hprintf(pf, "%j was added to the white list\n", &laddr);
+				break;
+			case '-': /* remove from white or black */
+				atfield_remove(everip_atfield(), (uint8_t *)&laddr.u.in6.sin6_addr);
+				break;
+			default:
+				err |= re_hprintf(pf, "?\n");
+				break;
+		}
+	}
+
+out:
+	return err;
+}
+
+static int cmd_debug_action(struct re_printf *pf, void *arg)
+{
+	int err = 0;
+	const struct cmd_arg *carg = arg;
+	if (!str_casecmp(carg->prm, "on")) {
+		log_enable_debug(true);
+		err |= re_hprintf(pf, "Debug Log set to ON state\n");
+	} else if (!str_casecmp(carg->prm, "off")) {
+		log_enable_debug(false);
+		err |= re_hprintf(pf, "Debug Log set to OFF state\n");
+	} else {
+		err |= re_hprintf(pf, "invalid choice: \"dbg on\" or \"dbg off\"\n");
+	}
+	return err;
+}
+
 static const struct cmd debugcmdv[] = {
+{"dbg", 0, 0, "Turn debug messages on/off", cmd_debug_action },
+
 {"main",     0,       0, "Main loop debug",          re_debug             },
 {"modules",  0,       0, "Loaded Module List",             mod_debug            },
 {"net", 	'n',      0, "Network Information",            cmd_net_debug        },
@@ -365,6 +424,11 @@ static const struct cmd debugcmdv[] = {
 {"tree", 't',      0, "Routing Tree Information",            cmd_treeoflife_debug },
 {"dht", 'd',      0, "DHT Database",            cmd_treeoflife_dht_debug },
 {"crypto", 'c',      0, "Crypto-Authentication (CA) Engine",            cmd_caengine_debug },
+
+{"atfield", 'a', 0, "A.T. FIELD", cmd_atfield_debug },
+{"black", '+', CMD_PRM, "Add an EVER/IP Address to the Blacklist", cmd_atfield_action },
+{"white", '*', CMD_PRM, "Add an EVER/IP Address to the Whitelist", cmd_atfield_action },
+{"remove", '-', CMD_PRM, "Remove an EVER/IP Address from any White/Black list", cmd_atfield_action },
 
 };
 

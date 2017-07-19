@@ -46,6 +46,8 @@ static struct everip {
 
     struct netevent *netevent;
 
+    struct atfield *atfield;
+
     /* magi */
     /*struct magi_eventdriver *eventdriver;*/
     /*struct magi_starfinder *starfinder;*/
@@ -104,6 +106,11 @@ int everip_init(void)
 
     if (!everip.udp_port)
         everip.udp_port = 1988;
+
+    /* atfield */
+    err = atfield_init( &everip.atfield );
+    if (err)
+        return err;
 
     /* tree of life */
     err = treeoflife_init( &everip.treeoflife
@@ -239,6 +246,7 @@ void everip_close(void)
     /*everip.mrpinger = mem_deref(everip.mrpinger);*/
     everip.net = mem_deref(everip.net);
 
+    everip.atfield = mem_deref(everip.atfield);
     everip.treeoflife = mem_deref(everip.treeoflife);
 }
 
@@ -267,6 +275,12 @@ struct conduits *everip_conduits(void)
 {
     return everip.conduits;
 }
+
+struct atfield *everip_atfield(void)
+{
+    return everip.atfield;
+}
+
 struct treeoflife *everip_treeoflife(void)
 {
     return everip.treeoflife;

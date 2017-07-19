@@ -34,7 +34,7 @@ static struct csock *udp_handle_incoming( struct csock *csock
 	size_t pfix = mb->pos;
 
 	mbuf_set_pos(mb, 0);
-	struct csock_addr *csaddr = (struct csock_addr *) mbuf_buf(mb);
+	struct csock_addr *csaddr = (struct csock_addr *)(void *)mbuf_buf(mb);
 
 	if (csaddr->flags & CSOCK_ADDR_BCAST) {
 		return NULL; /* not available on UDP */
@@ -68,7 +68,7 @@ static void recv_handler(const struct sa *src, struct mbuf *mb, void *arg)
 	/*csock_addr_cpysa(mb, src);*/
 
 	mbuf_set_pos(mb, 0);
-	struct csock_addr *csaddr = (struct csock_addr *)mbuf_buf(mb);
+	struct csock_addr *csaddr = (struct csock_addr *)(void *)mbuf_buf(mb);
 	memset(csaddr, 0, sizeof(struct csock_addr));
 
 	struct PACKONE {

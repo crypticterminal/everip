@@ -27,73 +27,73 @@
 #define MSEC_BEACON_INTERVAL 16000
 
 struct conduits {
-	struct list condl;
-	struct hash *peers;
-	struct list allpeers;
+  struct list condl;
+  struct hash *peers;
+  struct list allpeers;
 
-	struct csock eventd_cs;
+  struct csock eventd_cs;
 
   struct csock tunif_cs;
 
-	/*struct cd_relaymap *relaymap;*/
-	/*struct cd_cmdcenter *cmdcenter;*/
+  /*struct cd_relaymap *relaymap;*/
+  /*struct cd_cmdcenter *cmdcenter;*/
 
   struct treeoflife *treeoflife;
 
-	struct tmr interval_tmr;
-	struct tmr beacon_tmr;
+  struct tmr interval_tmr;
+  struct tmr beacon_tmr;
 
-	struct wire_beacon beacon;
+  struct wire_beacon beacon;
 
 };
 
 
 static void peer_destructor(void *data)
 {
-	struct conduit_peer *p = data;
+  struct conduit_peer *p = data;
 
-	/*_send_event_peer(p, 0xffffffff, EVD_CORE_PEER_GONE);*/
+  /*_send_event_peer(p, 0xffffffff, EVD_CORE_PEER_GONE);*/
 
   treeoflife_peer_cleanup( everip_treeoflife()
                          , (struct treeoflife_peer *)p);
 
-	p->caes = mem_deref(p->caes);
-	list_unlink(&p->le);
-	list_unlink(&p->le_all);
+  p->caes = mem_deref(p->caes);
+  list_unlink(&p->le);
+  list_unlink(&p->le_all);
 }
 
 static void _interval_cb(void *arg)
 {
-	struct conduits *c = arg;
+  struct conduits *c = arg;
 
-	struct le *le;
-	struct conduit_peer *p;
+  struct le *le;
+  struct conduit_peer *p;
 
-	if (!c)
-		return;
+  if (!c)
+    return;
 
-	uint64_t now = tmr_jiffies();
+  uint64_t now = tmr_jiffies();
 
-	LIST_FOREACH(&c->allpeers, le) {
-		p = le->data;
-		if (!p)
-			continue;
+  LIST_FOREACH(&c->allpeers, le) {
+    p = le->data;
+    if (!p)
+      continue;
 
-		if (p->addr.protover && now < p->lastmsg_ts + MSEC_PING_LAZY) {
-			if (p->state == CONDUIT_PEERSTATE_ESTABLISHED) {
-				/*_send_event_peer(p, 0xffffffff, EVD_CORE_PEER);*/
-			}
-			return;
-		}
+    if (p->addr.protover && now < p->lastmsg_ts + MSEC_PING_LAZY) {
+      if (p->state == CONDUIT_PEERSTATE_ESTABLISHED) {
+        /*_send_event_peer(p, 0xffffffff, EVD_CORE_PEER);*/
+      }
+      return;
+    }
 
         if (now < p->lastping_ts + MSEC_PING_LAZY) {
             return;
         }
 
         if (p->outside_initiation && now > p->lastmsg_ts + MSEC_PEER_FORGET) {
-        	info("unresponsive peer [%w][%ums]\n", p->caes->remote_pubkey, 32, MSEC_PEER_FORGET);
-        	/*_send_event_peer(p, 0xffffffff, EVD_CORE_PEER_GONE);*/
-        	p = mem_deref(p);
+          info("unresponsive peer [%w][%ums]\n", p->caes->remote_pubkey, 32, MSEC_PEER_FORGET);
+          /*_send_event_peer(p, 0xffffffff, EVD_CORE_PEER_GONE);*/
+          p = mem_deref(p);
             return;
         }
 
@@ -102,84 +102,80 @@ static void _interval_cb(void *arg)
             p->state = CONDUIT_PEERSTATE_UNRESPONSIVE;
 #if 0
             cd_relaymap_slot_setstate( (struct cd_relaymap_slot *)&p->relaymap_cs
-            	                     , RELAYMAP_SLOT_STATE_DOWN);
+                                   , RELAYMAP_SLOT_STATE_DOWN);
 #endif
         }
 
-	}
+  }
 
-	tmr_start( &c->interval_tmr, MSEC_PING_INTERVAL, _interval_cb, c);
+  tmr_start( &c->interval_tmr, MSEC_PING_INTERVAL, _interval_cb, c);
 }
 
 static void _beacon_cb(void *arg)
 {
-	struct le *le;
-	struct mbuf *mb;
-	struct conduits *c = arg;
+  struct le *le;
+  struct mbuf *mb;
+  struct conduits *c = arg;
 
-	if (!c)
-		return;
+  if (!c)
+    return;
 
-	struct csock_addr csaddr = {
-		 .len = CSOCK_ADDR_LENTOP
-		,.flags = CSOCK_ADDR_BCAST
-	};
+  struct csock_addr csaddr = {
+     .len = CSOCK_ADDR_LENTOP
+    ,.flags = CSOCK_ADDR_BCAST
+  };
 
-    struct conduit *_c;
-    LIST_FOREACH(&c->condl, le) {
-        _c = le->data;
-
-		mb = mbuf_alloc(512);
-		mbuf_set_end(mb, 512);
-		csock_addr_cpycsa(mb, &csaddr);
-		mbuf_set_pos(mb, 512 - WIRE_BEACON_LENGTH);
-		mbuf_write_mem(mb, (void*)&c->beacon, WIRE_BEACON_LENGTH);
-
-		mbuf_set_pos(mb, 512 - WIRE_BEACON_LENGTH);
-        csock_next(&_c->csock, mb);
-        mb = mem_deref(mb);
-    }
-
-    tmr_start( &c->beacon_tmr, MSEC_BEACON_INTERVAL, _beacon_cb, c);
-
+  struct conduit *_c;
+  LIST_FOREACH(&c->condl, le) {
+    _c = le->data;
+    mb = mbuf_alloc(512);
+    mbuf_set_end(mb, 512);
+    csock_addr_cpycsa(mb, &csaddr);
+    mbuf_set_pos(mb, 512 - WIRE_BEACON_LENGTH);
+    mbuf_write_mem(mb, (void*)&c->beacon, WIRE_BEACON_LENGTH);
+    mbuf_set_pos(mb, 512 - WIRE_BEACON_LENGTH);
+    csock_next(&_c->csock, mb);
+    mb = mem_deref(mb);
+  }
+  tmr_start( &c->beacon_tmr, MSEC_BEACON_INTERVAL, _beacon_cb, c);
 }
 
 static struct csock *_from_eventd( struct csock *csock
-								 , struct mbuf *mb )
+                                 , struct mbuf *mb )
 {
-	BREAKPOINT;
-	return NULL;
+  BREAKPOINT;
+  return NULL;
 }
 
 int conduits_debug(struct re_printf *pf, const struct conduits *conduits)
 {
-	int err;
-	struct le *le;
-	if (!conduits)
-		return 0;
+  int err;
+  struct le *le;
+  if (!conduits)
+    return 0;
 
-	err  = re_hprintf(pf, "[Peers and Conduits]\n");
-	err  = re_hprintf(pf, "  [Field IX(TM)]\n");
+  err  = re_hprintf(pf, "[Peers and Conduits]\n");
+  err  = re_hprintf(pf, "  [Field IX(TM)]\n");
 
-	if (!conduits->allpeers.head) {
-		err  = re_hprintf(pf, "    ■ {NO FIELD IX PEERS PRESENT}\n");
-	}
+  if (!conduits->allpeers.head) {
+    err  = re_hprintf(pf, "    ■ {NO FIELD IX PEERS PRESENT}\n");
+  }
 
-	struct conduit_peer *p;
+  struct conduit_peer *p;
     LIST_FOREACH(&conduits->allpeers, le) {
         p = le->data;
         err  = re_hprintf( pf
-        				 , "    [%w @ %s] STATE[%d] IN[%llu] OUT[%llu]\n"
-        				 , p->caes->remote_ip6, 16
+                 , "    [%w @ %s] STATE[%d] IN[%llu] OUT[%llu]\n"
+                 , p->caes->remote_ip6, 16
                  , p->conduit->name ? p->conduit->name : "?"
-        				 , p->state
-        				 , p->bytes_in, p->bytes_out);
+                 , p->state
+                 , p->bytes_in, p->bytes_out);
         /*err  = re_hprintf(pf, "\tSTATE = %s\n", );*/
         /*i++;*/
     }
 
 
-	err  = re_hprintf(pf, "  [Conduit Drivers]\n");
+  err  = re_hprintf(pf, "  [Conduit Drivers]\n");
     struct conduit *c;
     int i = 0;
     LIST_FOREACH(&conduits->condl, le) {
@@ -238,6 +234,10 @@ static struct csock *_from_terminaldogma( struct csock *csock
 
   if (ihdr->dst[0] != 0xFC) {
     return NULL; /* toss */
+  }
+
+  if (!atfield_check(everip_atfield(), ihdr->dst)) {
+    return NULL;
   }
 
     uint16_t next_header = ihdr->next_header;
@@ -340,79 +340,79 @@ static void _tree_tun_cb( struct treeoflife *t
 
 static void conduits_destructor(void *data)
 {
-	struct conduits *conduits = data;
-	hash_flush(conduits->peers);
-	list_flush(&conduits->condl);
-	conduits->peers = mem_deref(conduits->peers);
-	tmr_cancel(&conduits->interval_tmr);
-	tmr_cancel(&conduits->beacon_tmr);
+  struct conduits *conduits = data;
+  hash_flush(conduits->peers);
+  list_flush(&conduits->condl);
+  conduits->peers = mem_deref(conduits->peers);
+  tmr_cancel(&conduits->interval_tmr);
+  tmr_cancel(&conduits->beacon_tmr);
 }
 
 int conduits_init( struct conduits **conduitsp
-  	             , struct treeoflife *treeoflife )
+                 , struct treeoflife *treeoflife )
 {
-	struct conduits *conduits;
+  struct conduits *conduits;
 
-	if (!conduitsp)
-		return EINVAL;
+  if (!conduitsp)
+    return EINVAL;
 
-	conduits = mem_zalloc(sizeof(*conduits), conduits_destructor);
-	if (!conduits)
-		return ENOMEM;
+  conduits = mem_zalloc(sizeof(*conduits), conduits_destructor);
+  if (!conduits)
+    return ENOMEM;
 
-	list_init(&conduits->condl);
-	list_init(&conduits->allpeers);
-	hash_alloc(&conduits->peers, 128);
+  list_init(&conduits->condl);
+  list_init(&conduits->allpeers);
+  hash_alloc(&conduits->peers, 128);
 
-	conduits->treeoflife = treeoflife;
-	/*conduits->cmdcenter = cmdcenter;*/
+  conduits->treeoflife = treeoflife;
+  /*conduits->cmdcenter = cmdcenter;*/
 
   treeoflife_register_cb(treeoflife, _tree_cb, conduits);
   treeoflife_register_tuncb(treeoflife, _tree_tun_cb, conduits);
 
-	conduits->beacon.ver_be = arch_htobe32(EVERIP_VERSION_PROTOCOL);
+  conduits->beacon.ver_be = arch_htobe32(EVERIP_VERSION_PROTOCOL);
 
-	memcpy( conduits->beacon.pubkey
-		  , everip_caengine()->my_pubkey
-		  , 32);
+  memcpy( conduits->beacon.pubkey
+      , everip_caengine()->my_pubkey
+      , 32);
 
-	/* initiate beacon */
-	tmr_start( &conduits->interval_tmr
-			 , MSEC_PING_INTERVAL
-			 , _interval_cb
-			 , conduits );
+  /* initiate beacon */
+  tmr_start( &conduits->interval_tmr
+       , MSEC_PING_INTERVAL
+       , _interval_cb
+       , conduits );
 
 #if 1
-	tmr_start( &conduits->beacon_tmr
-			 , 0 /* start on next tick */
-			 , _beacon_cb
-			 , conduits );
+  tmr_start( &conduits->beacon_tmr
+       , 0 /* start on next tick */
+       , _beacon_cb
+       , conduits );
 #endif
 
-	/* hook into events */
-	conduits->eventd_cs.send = _from_eventd;
+  /* hook into events */
+  conduits->eventd_cs.send = _from_eventd;
 
-	*conduitsp = conduits;
+  *conduitsp = conduits;
 
-	return 0;
+  return 0;
 }
 
 
 struct conduit *conduit_find( const struct conduits *conduits
-                  		      , const char *name )
+                            , const char *name )
 {
-	struct le *le;
+  struct le *le;
 
-	if (!conduits || !name)
-		return NULL;
+  if (!conduits || !name)
+    return NULL;
 
-	for (le = conduits->condl.head; le; le = le->next) {
-		struct conduit *c = le->data;
+  for (le = conduits->condl.head; le; le = le->next) {
+    struct conduit *c = le->data;
     if (c && !strcmp((const char *)c->name, name)) {
       return c;
     }
-	}
-	return NULL;
+  }
+  return NULL;
 }
 
 static bool _peer_find_cb(struct le *le, void *arg)
@@ -421,14 +421,14 @@ static bool _peer_find_cb(struct le *le, void *arg)
         struct csock_addr *csaddr = arg;
 
         if ( csaddr->flags & CSOCK_ADDR_MAC ) {
-        	return 0 == memcmp(&csaddr->a.mac, &p->csaddr.a.mac, 6);
+          return 0 == memcmp(&csaddr->a.mac, &p->csaddr.a.mac, 6);
         } else {
-        	return sa_cmp(&csaddr->a.sa, &p->csaddr.a.sa, SA_ALL);
+          return sa_cmp(&csaddr->a.sa, &p->csaddr.a.sa, SA_ALL);
         }
 }
 
 struct conduit_peer *conduits_peer_find( const struct conduits *conduits
-							   		   , const struct csock_addr *csaddr )
+                       , const struct csock_addr *csaddr )
 {
         if (!conduits || !csaddr)
                 return NULL;
@@ -436,27 +436,27 @@ struct conduit_peer *conduits_peer_find( const struct conduits *conduits
          /*debug("HASH IS SET TO %u\n", csaddr->hash);*/
 
         return list_ledata(hash_lookup( conduits->peers
-        							  , csaddr->hash
-        							  , _peer_find_cb
-        							  , (void *)csaddr));
+                        , csaddr->hash
+                        , _peer_find_cb
+                        , (void *)csaddr));
 }
 
 
 #if 0
 static struct csock *_relaymap_send( struct csock *csock
-								   , struct mbuf *mb)
+                   , struct mbuf *mb)
 {
 
-	if (!csock || !mb)
-		return NULL;
+  if (!csock || !mb)
+    return NULL;
 
-	/*debug("_relaymap_send\n");*/
+  /*debug("_relaymap_send\n");*/
 
-	struct conduit_peer *p = (struct conduit_peer *)csock;
+  struct conduit_peer *p = (struct conduit_peer *)csock;
 
-	p->bytes_out += mbuf_get_left(mb);
+  p->bytes_out += mbuf_get_left(mb);
 
-	/* encrypt */
+  /* encrypt */
     ASSERT_TRUE(!caengine_session_encrypt(p->caes, mb));
     ASSERT_TRUE(!(((uintptr_t)mb->buf) % 4) && "alignment fault");
 
@@ -472,87 +472,87 @@ static struct csock *_relaymap_send( struct csock *csock
 
     csock_forward(&p->conduit->csock, mb);
 
-	return NULL;
+  return NULL;
 }
 #endif
 
 
 static struct conduit_peer *
 conduit_peer_create( struct conduit *conduit
-				   , const struct csock_addr *csaddr
-				   , const uint8_t remote_pubkey[32]
-				   , bool outside_initiation )
+           , const struct csock_addr *csaddr
+           , const uint8_t remote_pubkey[32]
+           , bool outside_initiation )
 {
-	int err = 0;
-	struct conduit_peer *p;
-	p = mem_zalloc(sizeof(*p), peer_destructor);
-	if (!p)
-		return NULL;
+  int err = 0;
+  struct conduit_peer *p;
+  p = mem_zalloc(sizeof(*p), peer_destructor);
+  if (!p)
+    return NULL;
 
-	debug("\n\nNEW PEER\n\n");
+  debug("\n\nNEW PEER\n\n");
 
-	p->conduit = conduit;
+  p->conduit = conduit;
 
-	ASSERT_TRUE(csaddr->len <= sizeof(struct csock_addr));
-	memcpy(&p->csaddr, csaddr, sizeof(struct csock_addr));
+  ASSERT_TRUE(csaddr->len <= sizeof(struct csock_addr));
+  memcpy(&p->csaddr, csaddr, sizeof(struct csock_addr));
 
-/*	debug("csaddr->len = %u|%u\n", (&p->csaddr)->len, (&p->csaddr)->a.sa.len);
+/*  debug("csaddr->len = %u|%u\n", (&p->csaddr)->len, (&p->csaddr)->a.sa.len);
 */
 
-	/*debug("HASH IS SET TO %u\n", csaddr->hash);*/
+  /*debug("HASH IS SET TO %u\n", csaddr->hash);*/
 
-	hash_append( conduit->ctx->peers
-			   , csaddr->hash
-			   , &p->le
-			   , p
-			   );
+  hash_append( conduit->ctx->peers
+         , csaddr->hash
+         , &p->le
+         , p
+         );
 
-	list_append(&conduit->ctx->allpeers, &p->le_all, p);
+  list_append(&conduit->ctx->allpeers, &p->le_all, p);
 
-	/* create cae_session */
-	err = caengine_session_new( &p->caes
-							  , everip_caengine()
-							  , remote_pubkey
-							  , ( outside_initiation ? true : false));
-	if (err) {
-		error("caengine_session_new %m", err);
-		p = mem_deref(p);
-		return NULL;
-	}
+  /* create cae_session */
+  err = caengine_session_new( &p->caes
+                , everip_caengine()
+                , remote_pubkey
+                , ( outside_initiation ? true : false));
+  if (err) {
+    error("caengine_session_new %m", err);
+    p = mem_deref(p);
+    return NULL;
+  }
 
-	p->outside_initiation = outside_initiation;
+  p->outside_initiation = outside_initiation;
 
-	/* setup timers */
-	p->lastmsg_ts =   tmr_jiffies()
-					- MSEC_PING_LAZY
-					- 1;
+  /* setup timers */
+  p->lastmsg_ts =   tmr_jiffies()
+          - MSEC_PING_LAZY
+          - 1;
 
-	return p;
+  return p;
 }
 
 static struct csock *conduits_handle_beacon( struct conduit *conduit
-										   , struct csock_addr *csaddr
-										   , struct mbuf *mb)
+                       , struct csock_addr *csaddr
+                       , struct mbuf *mb)
 {
-	if (!conduit || !csaddr || !mb)
-		return NULL;
+  if (!conduit || !csaddr || !mb)
+    return NULL;
 
-	debug( "conduits_handle_beacon [%u] from %J\n"
-		     , mbuf_get_left(mb)
-		     , &csaddr->a.sa);
+  debug( "conduits_handle_beacon [%u] from %J\n"
+         , mbuf_get_left(mb)
+         , &csaddr->a.sa);
 
-	struct wire_beacon *beacon = (struct wire_beacon *)(void *)mbuf_buf(mb);
+  struct wire_beacon *beacon = (struct wire_beacon *)(void *)mbuf_buf(mb);
 
-	/* check version */
-	if (!everip_version_compat(EVERIP_VERSION_PROTOCOL, arch_betoh32(beacon->ver_be))) {
-		debug("beacon: invalid version [%u];\n", arch_betoh32(beacon->ver_be));
-		return NULL;
-	}
+  /* check version */
+  if (!everip_version_compat(EVERIP_VERSION_PROTOCOL, arch_betoh32(beacon->ver_be))) {
+    debug("beacon: invalid version [%u];\n", arch_betoh32(beacon->ver_be));
+    return NULL;
+  }
 
-	uint8_t check_address[16];
-	addr_calc_pubkeyaddr(check_address, beacon->pubkey);
+  uint8_t check_address[16];
+  addr_calc_pubkeyaddr(check_address, beacon->pubkey);
 
-	if (check_address[0] != 0xfc || !memcmp(everip_caengine()->my_pubkey, beacon->pubkey, 32)) {
+  if (check_address[0] != 0xfc || !memcmp(everip_caengine()->my_pubkey, beacon->pubkey, 32)) {
         debug("beacon: invalid key [%w]\n", check_address, 16);
         return NULL;
     }
@@ -560,132 +560,132 @@ static struct csock *conduits_handle_beacon( struct conduit *conduit
     struct conduit_peer *p = conduits_peer_find(conduit->ctx, csaddr);
 
     if (p) {
-    	debug("ignoring peer beacon [%w];\n", check_address, 16);
-    	return NULL;
+      debug("ignoring peer beacon [%w];\n", check_address, 16);
+      return NULL;
     }
 
-	/* X:TODO calculate address and make sure it is us*/
+  /* X:TODO calculate address and make sure it is us*/
 
-	conduits_peer_bootstrap( conduit
-						   , conduit->ctx
-						   , false
-						   , beacon->pubkey
-						   , csaddr
-						   , "DEFAULT"
-						   , NULL /*"[FIELD IX]"*/
-						   , NULL);
+  conduits_peer_bootstrap( conduit
+               , conduit->ctx
+               , false
+               , beacon->pubkey
+               , csaddr
+               , "DEFAULT"
+               , NULL /*"[FIELD IX]"*/
+               , NULL);
 
 
-	return NULL;
+  return NULL;
 
 }
 
 static void _conduits_process_endpoints( struct conduits *c
-									   , struct conduit_peer *p)
+                     , struct conduit_peer *p)
 {
-	struct le *le;
-	struct conduit_peer *_p;
+  struct le *le;
+  struct conduit_peer *_p;
     LIST_FOREACH(&c->allpeers, le) {
-    	_p = le->data;
-    	if (p != _p && !memcmp(p->addr.key, _p->addr.key, 32)) {
-    		/* similar peers?? */
-    		if (p->conduit == _p->conduit) {
-    			/* update and destroy old peer */
+      _p = le->data;
+      if (p != _p && !memcmp(p->addr.key, _p->addr.key, 32)) {
+        /* similar peers?? */
+        if (p->conduit == _p->conduit) {
+          /* update and destroy old peer */
 #if 0
-	            p->addr.path = _p->addr.path;
-	            p->relaymap_cs.adj = _p->relaymap_cs.adj;
-	            p->relaymap_cs.adj->adj = &p->relaymap_cs;
-	            _p->relaymap_cs.adj = NULL;
+              p->addr.path = _p->addr.path;
+              p->relaymap_cs.adj = _p->relaymap_cs.adj;
+              p->relaymap_cs.adj->adj = &p->relaymap_cs;
+              _p->relaymap_cs.adj = NULL;
 #endif
-	            _p = mem_deref(_p);
-	            return;
-    		}
-    	}
-	}
-	return;
+              _p = mem_deref(_p);
+              return;
+        }
+      }
+  }
+  return;
 }
 
 static struct csock *conduits_handle_incoming( struct csock *csock
-											 , struct mbuf *mb)
+                       , struct mbuf *mb)
 {
 
-	struct conduit *conduit = (struct conduit *)csock;
+  struct conduit *conduit = (struct conduit *)csock;
 
-	size_t pfix = mb->pos;
-	mbuf_set_pos(mb, 0);
-	struct csock_addr *csaddr = (struct csock_addr *) mbuf_buf(mb);
+  size_t pfix = mb->pos;
+  mbuf_set_pos(mb, 0);
+  struct csock_addr *csaddr = (struct csock_addr *)(void *)mbuf_buf(mb);
 
-	mbuf_set_pos(mb, pfix);
+  mbuf_set_pos(mb, pfix);
 
-	if (mbuf_get_left(mb) == WIRE_BEACON_LENGTH) {
-		return conduits_handle_beacon(conduit, csaddr, mb);
-	}
+  if (csaddr->flags & CSOCK_ADDR_BCAST) {
+    return conduits_handle_beacon(conduit, csaddr, mb);
+  }
 
-	struct conduit_peer *p = conduits_peer_find(conduit->ctx, csaddr);
+  struct conduit_peer *p = conduits_peer_find(conduit->ctx, csaddr);
 
-	debug("conduits_handle_incoming [%u] on %s\n"
-		     , mbuf_get_left(mb)
-		     , conduit->name);
+  debug("conduits_handle_incoming [%u] on %s\n"
+         , mbuf_get_left(mb)
+         , conduit->name);
 
-	debug("peer? %p\n", p);
+  debug("peer? %p\n", p);
 
-	if (!p) {
-		if (mbuf_get_left(mb) < CAE_HEADER_LENGTH)
-			return NULL;
+  if (!p) {
+    if (mbuf_get_left(mb) < CAE_HEADER_LENGTH)
+      return NULL;
 
-	    uint8_t remote_pubkey[32];
-	    mbuf_set_pos(mb, pfix + (4 + 12 + 24));
-	    mbuf_read_mem(mb, remote_pubkey, 32);
-  		debug("remote_pubkey = %w\n", remote_pubkey, 32);
-  		p = conduit_peer_create( conduit
-  							   , csaddr
-  							   , remote_pubkey
-  							   , true );
+      uint8_t remote_pubkey[32];
+      mbuf_set_pos(mb, pfix + (4 + 12 + 24));
+      mbuf_read_mem(mb, remote_pubkey, 32);
+      debug("remote_pubkey = %w\n", remote_pubkey, 32);
+      p = conduit_peer_create( conduit
+                   , csaddr
+                   , remote_pubkey
+                   , true );
 
-		if (!p) {
-			return NULL;
-		}
+    if (!p) {
+      return NULL;
+    }
 
-		mbuf_set_pos(mb, pfix);
-		if (caengine_session_decrypt(p->caes, mb)) {
-			p = mem_deref(p);
-			return NULL;
-		}
+    mbuf_set_pos(mb, pfix);
+    if (caengine_session_decrypt(p->caes, mb)) {
+      p = mem_deref(p);
+      return NULL;
+    }
 
     /* REGISTRATION */
 
 #if 0
-		p->relaymap_cs.send = _relaymap_send;
+    p->relaymap_cs.send = _relaymap_send;
 
-		err = cd_relaymap_slot_add( &p->addr.path
-			          		      , conduit->ctx->relaymap
-					 		      , &p->relaymap_cs );
-		if (err) {
-			p = mem_deref(p);
-			return NULL;
-		}
+    err = cd_relaymap_slot_add( &p->addr.path
+                          , conduit->ctx->relaymap
+                    , &p->relaymap_cs );
+    if (err) {
+      p = mem_deref(p);
+      return NULL;
+    }
 #endif
 
-	} else {
-		/* HAVE a PEER! */
-	    caengine_session_resetiftimedout(p->caes);
-	    mbuf_set_pos(mb, pfix);
-		if (caengine_session_decrypt(p->caes, mb)) {
-			return NULL;
-		}
-		p->bytes_in += mbuf_get_left(mb);
-		/*X:TODO plink_recv;*/
-	}
+  } else {
+    /* HAVE a PEER! */
+      caengine_session_resetiftimedout(p->caes);
+      mbuf_set_pos(mb, pfix);
+    if (caengine_session_decrypt(p->caes, mb)) {
+      return NULL;
+    }
+    p->bytes_in += mbuf_get_left(mb);
+    /*X:TODO plink_recv;*/
+  }
 
-	/*re_printf("GOT SOME DATA DAD! = %w\n", mbuf_buf(mb), mbuf_get_left(mb));*/
+  /*re_printf("GOT SOME DATA DAD! = %w\n", mbuf_buf(mb), mbuf_get_left(mb));*/
 
-	/*goto post_caengine;*/
+  /*goto post_caengine;*/
 
-	(void)mb;
+  (void)mb;
 
 /*post_caengine:*/
 
-	enum CAENGINE_STATE cae_state = caengine_session_state(p->caes);
+  enum CAENGINE_STATE cae_state = caengine_session_state(p->caes);
 
     if (p->state < CONDUIT_PEERSTATE_ESTABLISHED) {
         p->state = (enum CONDUIT_PEERSTATE)cae_state;
@@ -731,65 +731,65 @@ static struct csock *conduits_handle_incoming( struct csock *csock
                        , mb
                        , 1);
 
-	return NULL;
+  return NULL;
 }
 
 int conduits_peer_bootstrap( struct conduit *conduit
-						   , struct conduits *c
-						   , bool outside_initiation
-						   , const uint8_t *remote_pubkey
-						   , const struct csock_addr *csaddr
-						   , const char *pword
-						   , const char *login
-						   , const char *identifier )
+                           , struct conduits *c
+                           , bool outside_initiation
+                           , const uint8_t *remote_pubkey
+                           , const struct csock_addr *csaddr
+                           , const char *pword
+                           , const char *login
+                           , const char *identifier )
 {
-	struct conduit_peer *p;
+  struct conduit_peer *p;
 
-	if (!conduit || !c || !remote_pubkey)
-		return EINVAL;
+  if (!conduit || !c || !remote_pubkey)
+    return EINVAL;
 
-	debug("conduits_peer_bootstrap [%J]\n", &csaddr->a.sa);
-	/* get conduit from conduit_id */
+  debug("conduits_peer_bootstrap [%J]\n", &csaddr->a.sa);
+  /* get conduit from conduit_id */
 
-	/* calculate address for validity */
+  /* calculate address for validity */
 
-	/* create new peer */
-	/* create new caession for peer */
-	p = conduit_peer_create( conduit
-						   , csaddr
-						   , remote_pubkey
-						   , outside_initiation );
+  /* create new peer */
+  /* create new caession for peer */
+  p = conduit_peer_create( conduit
+               , csaddr
+               , remote_pubkey
+               , outside_initiation );
 
 
-	/* set authentation as required */
-	caengine_session_setauth(p->caes, pword, login);
+  /* set authentation as required */
+  caengine_session_setauth(p->caes, pword, login);
 
 #if 0
-	/* initiate flow between relaymap and peer */
-	p->relaymap_cs.send = _relaymap_send;
-	err = cd_relaymap_slot_add( &p->addr.path
-		          		      , c->relaymap
-				 		      , &p->relaymap_cs );
-	if (err) {
-		p = mem_deref(p);
-		return EINVAL;
-	}
+  /* initiate flow between relaymap and peer */
+  p->relaymap_cs.send = _relaymap_send;
+  err = cd_relaymap_slot_add( &p->addr.path
+                        , c->relaymap
+                  , &p->relaymap_cs );
+  if (err) {
+    p = mem_deref(p);
+    return EINVAL;
+  }
 
-	/* send ping! */
-	_send_ping(p);
+  /* send ping! */
+  _send_ping(p);
 #endif
 
-	return 0;
+  return 0;
 }
 
 static void conduit_destructor(void *data)
 {
-	struct conduit *c = data;
+  struct conduit *c = data;
 
-	c->name = mem_deref(c->name);
-	c->desc = mem_deref(c->desc);
+  c->name = mem_deref(c->name);
+  c->desc = mem_deref(c->desc);
 
-	csock_stop(&c->csock);
+  csock_stop(&c->csock);
 }
 
 /**
@@ -799,30 +799,30 @@ static void conduit_destructor(void *data)
  * @return 0 if success, otherwise errorcode
  */
 int conduits_register( struct conduits *conduits
-					 , const char *name
-					 , const char *desc
-					 , struct csock *csock )
+           , const char *name
+           , const char *desc
+           , struct csock *csock )
 {
-	struct conduit *c;
+  struct conduit *c;
 
-	if (!conduits || !name || !desc || !csock)
-		return EINVAL;
+  if (!conduits || !name || !desc || !csock)
+    return EINVAL;
 
-	c = mem_zalloc(sizeof(*c), conduit_destructor);
-	if (!c)
-		return ENOMEM;
+  c = mem_zalloc(sizeof(*c), conduit_destructor);
+  if (!c)
+    return ENOMEM;
 
-	str_dup(&c->name, name);
-	str_dup(&c->desc, desc);
+  str_dup(&c->name, name);
+  str_dup(&c->desc, desc);
 
-	c->ctx = conduits;
+  c->ctx = conduits;
 
-	c->csock.send = conduits_handle_incoming;
-	/* setup flow */
-	csock_flow(csock, &c->csock);
+  c->csock.send = conduits_handle_incoming;
+  /* setup flow */
+  csock_flow(csock, &c->csock);
 
-	list_append(&conduits->condl, &c->le, c);
+  list_append(&conduits->condl, &c->le, c);
 
-	return 0;
+  return 0;
 }
 

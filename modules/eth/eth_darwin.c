@@ -70,7 +70,7 @@ static struct csock *eth_handle_incoming( struct csock *csock
 	size_t pfix = mb->pos;
 
 	mbuf_set_pos(mb, 0);
-	struct csock_addr *csaddr = (struct csock_addr *) mbuf_buf(mb);
+	struct csock_addr *csaddr = (struct csock_addr *)(void *)mbuf_buf(mb);
 
 	mbuf_set_pos(mb, pfix);
 
@@ -122,7 +122,7 @@ static void _process_frame( struct eth_csock *eth_c
 
 	size_t pfix = mb->pos;
 	mbuf_set_pos(mb, 0);
-	struct csock_addr *csaddr = (struct csock_addr *)mbuf_buf(mb);
+	struct csock_addr *csaddr = (struct csock_addr *)(void *)mbuf_buf(mb);
 	memset(csaddr, 0, sizeof(struct csock_addr));
 
 	memcpy(csaddr->a.mac, src, 6);
@@ -138,6 +138,9 @@ static void _process_frame( struct eth_csock *eth_c
 	csaddr->hash = hash_joaat((uint8_t *)&tmp, 6);
 	csaddr->len = CSOCK_ADDR_LENMAC;
 	csaddr->flags = tmp.flags;
+  if (dst[0] == 0xff) {
+      csaddr->flags |= CSOCK_ADDR_BCAST;
+  }
 
 	debug("HASH IS SET TO %u [%W]\n", csaddr->hash, src, 6);
 
@@ -270,7 +273,7 @@ static int register_eth_conduit( const char ifname[IFNAMSIZ]
     }
     {
 	    struct ifreq ifr = { .ifr_name = { 0 } };
-	    strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+	    strcpy(ifr.ifr_name, ifname);
 	    if (0 != ioctl(eth_c->fd, BIOCSETIF, &ifr)) {
 	        warning( "ioctl(BIOCSETIF, [%s]) [%s]"
 	        	   , ifname

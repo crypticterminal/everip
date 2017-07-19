@@ -30,7 +30,6 @@ struct netevent {
 static void _read_handler(int flags, void *arg)
 {
 	struct netevent *ne = arg;
-	int err = 0;
 	ssize_t n;
 	uint8_t msg[2048];
 

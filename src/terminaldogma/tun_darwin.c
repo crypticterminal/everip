@@ -49,7 +49,6 @@ https://opensource.apple.com/source/xnu/xnu-2050.7.9/bsd/net/if_utun.c.auto.html
 static struct csock *_from_terminaldogma( struct csock *csock
 							       		, struct mbuf *mb )
 {
-	int err = 0;
 	ssize_t n;
 
 	if (!csock || !mb)
@@ -79,11 +78,9 @@ static void tun_read_handler(int flags, void *arg)
 {
 	struct tunif *tun = arg;
 	(void)flags;
+  ssize_t n;
 
 	struct mbuf *mb = mbuf_alloc(EVER_OUTWARD_MBE_LENGTH*2);
-
-	int err = 0;
-	ssize_t n;
 
 	if (!mb)
 		return;
