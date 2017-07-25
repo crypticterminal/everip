@@ -121,7 +121,6 @@ int bencode_decode_odict(struct odict **op, uint32_t hash_size, const char *str,
 int bencode_encode_odict(struct re_printf *pf, const struct odict *o);
 
 struct treeoflife;
-struct treeoflife_node;
 
 /*
  * Address
@@ -648,12 +647,7 @@ enum CONDUIT_PEERSTATE
     CONDUIT_PEERSTATE_UNAUTHENTICATED = -2,
 };
 
-struct treeoflife_peer {
-  struct treeoflife_node *tn;
-};
-
 struct conduit_peer {
-  struct treeoflife_peer tolpeer;
   uint64_t pad;
   struct le le;
   struct le le_all;
@@ -776,7 +770,7 @@ int tunif_init( struct tunif **tunifp );
  */
 
 typedef void (treeoflife_treemsg_h)( struct treeoflife *t
-                                   , struct treeoflife_peer *peer
+                                   , uint8_t peerkey[KEY_LENGTH]
                                    , struct mbuf *mb
                                    , void *arg);
 
@@ -784,19 +778,24 @@ typedef void (treeoflife_tunnel_h)( struct treeoflife *t
                                   , struct mbuf *mb
                                   , void *arg);
 
+#define TREEOFLIFE_DHT_MODE_BLANK 0
+#define TREEOFLIFE_DHT_MODE_SEARCH 1<<0
+#define TREEOFLIFE_DHT_MODE_OHPEER 1<<1
+#define TREEOFLIFE_DHT_MODE_MYCHLD 1<<2
+#define TREEOFLIFE_DHT_MODE_PARENT 1<<3
+
 struct treeoflife_dht_item {
   struct le le;
   uint8_t key[KEY_LENGTH];
   uint8_t binlen;
   uint8_t binrep[ROUTE_LENGTH];
-  bool searching;
+  uint8_t mode;
   struct tmr tmr;
   /* X:TODO in the future, we should also store signing data */
 };
 
 struct treeoflife_zone {
-  struct treeoflife_node *parent;
-  struct list children;
+  struct treeoflife_dht_item *parent;
   uint8_t root[KEY_LENGTH];
   uint32_t height;
 
@@ -824,6 +823,7 @@ struct treeoflife {
   struct list dht_items;
 };
 
+#if 0 /* X:DELETE */
 struct treeoflife_node {
   struct le le[ZONE_COUNT];
   struct treeoflife *tree;
@@ -833,31 +833,36 @@ struct treeoflife_node {
   uint8_t binlen;
   uint8_t binrep[ROUTE_LENGTH];
 };
+#endif
 
 int treeoflife_init( struct treeoflife **treeoflifep, uint8_t public_key[KEY_LENGTH] );
 int treeoflife_debug(struct re_printf *pf, const struct treeoflife *t);
 int treeoflife_dht_debug(struct re_printf *pf, const struct treeoflife *t);
 
-void treeoflife_msg_recv( struct treeoflife *t, struct treeoflife_peer *peer, struct mbuf *mb, uint16_t weight );
+void treeoflife_msg_recv( struct treeoflife *t, uint8_t peer_key[KEY_LENGTH], struct mbuf *mb, uint16_t weight );
 void treeoflife_register_cb( struct treeoflife *t, treeoflife_treemsg_h *cb, void *arg);
 void treeoflife_register_tuncb( struct treeoflife *t, treeoflife_tunnel_h *cb, void *arg);
 
-void treeoflife_peer_cleanup(struct treeoflife *t, struct treeoflife_peer *p);
+void treeoflife_peer_add(struct treeoflife *t, uint8_t peer_key[KEY_LENGTH]);
+void treeoflife_peer_del(struct treeoflife *t, uint8_t peer_key[KEY_LENGTH]);
 
-bool treeoflife_search( struct treeoflife *t
-            , uint8_t search_key[KEY_LENGTH]
-            , uint8_t *binlen
-            , uint8_t binrep[ROUTE_LENGTH]
-            , bool skip_dht );
+enum TREEOFLIFE_SEARCH {
+   TREEOFLIFE_SEARCH_NOTFOUND = 0
+  ,TREEOFLIFE_SEARCH_FOUNDLOC = 1
+  ,TREEOFLIFE_SEARCH_FOUNDRMT = 2
+};
 
-struct treeoflife_peer *treeoflife_route_to_peer( struct treeoflife *t
-                        , uint8_t routelen
-                        , uint8_t route[ROUTE_LENGTH] );
+enum TREEOFLIFE_SEARCH treeoflife_search( struct treeoflife *t
+                                        , uint8_t search_key[KEY_LENGTH]
+                                        , uint8_t *binlen
+                                        , uint8_t binrep[ROUTE_LENGTH]
+                                        , bool skip_dht );
 
-int treeoflife_peer_find_or_new( struct treeoflife_peer **pp
-                 , struct treeoflife *t
-                 , const struct sa *sa
-                 , bool is_locked );
+int treeoflife_route_to_peer( struct treeoflife *t
+                            , uint8_t routelen
+                            , uint8_t route[ROUTE_LENGTH]
+                            , uint8_t out_key[KEY_LENGTH]);
+
 
 /*
  * Modules

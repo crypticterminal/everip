@@ -50,29 +50,54 @@ struct conduits {
 
 static void peer_destructor(void *data)
 {
+  struct le *le;
   struct conduit_peer *p = data;
+  struct conduit_peer *_p = NULL;
+  struct conduits *c = p->conduit->ctx;
+  bool i_am_last = true;
 
-  /*_send_event_peer(p, 0xffffffff, EVD_CORE_PEER_GONE);*/
+  LIST_FOREACH(&c->allpeers, le) {
+    _p = le->data;
+    if (!_p) continue;
+    if (p != _p && !memcmp(p->addr.key, _p->addr.key, 32)) {
+      i_am_last = false;
+      break;
+    }
+  }
 
-  treeoflife_peer_cleanup( everip_treeoflife()
-                         , (struct treeoflife_peer *)p);
+  if (i_am_last && p->caes) {
+    treeoflife_peer_del( c->treeoflife
+                       , p->caes->remote_ip6 + 1 /* X:TODO X:LENGTH */
+                       );
+  }
 
   p->caes = mem_deref(p->caes);
   list_unlink(&p->le);
   list_unlink(&p->le_all);
 }
 
+static bool _peers_state_sort(struct le *le1, struct le *le2, void *arg)
+{
+  struct conduit_peer *p1 = le1->data;
+  struct conduit_peer *p2 = le2->data;
+  (void)arg;
+
+  /* higher states are better... */
+  return (p1->state >= p2->state);
+}
+
 static void _interval_cb(void *arg)
 {
-  struct conduits *c = arg;
-
   struct le *le;
   struct conduit_peer *p;
+  struct conduits *c = arg;
 
   if (!c)
     return;
 
   uint64_t now = tmr_jiffies();
+
+  list_sort(&c->allpeers, _peers_state_sort, NULL);
 
   LIST_FOREACH(&c->allpeers, le) {
     p = le->data;
@@ -86,28 +111,22 @@ static void _interval_cb(void *arg)
       return;
     }
 
-        if (now < p->lastping_ts + MSEC_PING_LAZY) {
-            return;
-        }
+    if (now < p->lastping_ts + MSEC_PING_LAZY) {
+      return;
+    }
 
-        if (p->outside_initiation && now > p->lastmsg_ts + MSEC_PEER_FORGET) {
-          info("unresponsive peer [%w][%ums]\n", p->caes->remote_pubkey, 32, MSEC_PEER_FORGET);
-          /*_send_event_peer(p, 0xffffffff, EVD_CORE_PEER_GONE);*/
-          p = mem_deref(p);
-            return;
-        }
+    if (p->outside_initiation && now > p->lastmsg_ts + MSEC_PEER_FORGET) {
+      info("unresponsive peer [%w][%ums]\n", p->caes->remote_pubkey, 32, MSEC_PEER_FORGET);
+      /*_send_event_peer(p, 0xffffffff, EVD_CORE_PEER_GONE);*/
+      p = mem_deref(p);
+      return;
+    }
 
-        bool unresponsive = (now > p->lastmsg_ts + MSEC_PEER_UNRESPONSIVE);
-        if (unresponsive) {
-            p->state = CONDUIT_PEERSTATE_UNRESPONSIVE;
-#if 0
-            cd_relaymap_slot_setstate( (struct cd_relaymap_slot *)&p->relaymap_cs
-                                   , RELAYMAP_SLOT_STATE_DOWN);
-#endif
-        }
-
+    bool unresponsive = (now > p->lastmsg_ts + MSEC_PEER_UNRESPONSIVE);
+    if (unresponsive) {
+      p->state = CONDUIT_PEERSTATE_UNRESPONSIVE;
+    }
   }
-
   tmr_start( &c->interval_tmr, MSEC_PING_INTERVAL, _interval_cb, c);
 }
 
@@ -151,8 +170,11 @@ int conduits_debug(struct re_printf *pf, const struct conduits *conduits)
 {
   int err;
   struct le *le;
+  struct sa tmp_sa;
   if (!conduits)
     return 0;
+  
+  sa_init(&tmp_sa, AF_INET6);
 
   err  = re_hprintf(pf, "[Peers and Conduits]\n");
   err  = re_hprintf(pf, "  [Field IX(TM)]\n");
@@ -164,9 +186,10 @@ int conduits_debug(struct re_printf *pf, const struct conduits *conduits)
   struct conduit_peer *p;
     LIST_FOREACH(&conduits->allpeers, le) {
         p = le->data;
+        sa_set_in6(&tmp_sa, p->caes->remote_ip6, 0);
         err  = re_hprintf( pf
-                 , "    [%w @ %s] STATE[%d] IN[%llu] OUT[%llu]\n"
-                 , p->caes->remote_ip6, 16
+                 , "    [%j\t@%s]\tSTATE[%d]\tIN[%llu]\tOUT[%llu]\n"
+                 , &tmp_sa
                  , p->conduit->name ? p->conduit->name : "?"
                  , p->state
                  , p->bytes_in, p->bytes_out);
@@ -218,7 +241,8 @@ static struct csock *_from_terminaldogma( struct csock *csock
                         , struct mbuf *mb )
 {
   size_t top_pos = 0;
-  struct treeoflife_peer *dst_peer;
+  uint8_t dst_peerkey[KEY_LENGTH];
+  enum TREEOFLIFE_SEARCH search_result = TREEOFLIFE_SEARCH_NOTFOUND;
   /*info("_from_terminaldogma\n");*/
 
   struct conduits *c = container_of( csock
@@ -229,8 +253,8 @@ static struct csock *_from_terminaldogma( struct csock *csock
 
   mbuf_advance(mb, 4);
 
-    struct _wire_ipv6_header *ihdr = \
-        (struct _wire_ipv6_header *)mbuf_buf(mb);
+  struct _wire_ipv6_header *ihdr = \
+      (struct _wire_ipv6_header *)mbuf_buf(mb);
 
   if (ihdr->dst[0] != 0xFC) {
     return NULL; /* toss */
@@ -240,52 +264,60 @@ static struct csock *_from_terminaldogma( struct csock *csock
     return NULL;
   }
 
-    uint16_t next_header = ihdr->next_header;
+  uint16_t next_header = ihdr->next_header;
 
-    uint8_t binlen;
-    uint8_t binrep[ROUTE_LENGTH];
+  uint8_t binlen;
+  uint8_t binrep[ROUTE_LENGTH];
 
-    memset(binrep, 0, ROUTE_LENGTH);
+  memset(binrep, 0, ROUTE_LENGTH);
 
-  if (!treeoflife_search( c->treeoflife
-           , ihdr->dst+1
-           , &binlen
-           , binrep
-           , false)) {
+  search_result = treeoflife_search( c->treeoflife
+                                   , ihdr->dst+1
+                                   , &binlen
+                                   , binrep
+                                   , false );
+
+  if (search_result == TREEOFLIFE_SEARCH_NOTFOUND) {
     return NULL;
   }
 
-  debug("FOUND ROUTE FOR %W!\n[%u@%W]\n", ihdr->dst, KEY_LENGTH+1, binlen, binrep, ROUTE_LENGTH);
+  if (search_result == TREEOFLIFE_SEARCH_FOUNDLOC) {
+    /* cool, we are local! */
+    memcpy(dst_peerkey, ihdr->dst+1, KEY_LENGTH);/* X:TODO X:LENGTH */
+  } else {
+    /* have to route! */
+    debug("FOUND ROUTE FOR %W!\n[%u@%W]\n", ihdr->dst, KEY_LENGTH+1, binlen, binrep, ROUTE_LENGTH);
 
-  dst_peer = treeoflife_route_to_peer(c->treeoflife, binlen, binrep);
-
-  if (!dst_peer) {
-    debug("!dst_peer\n");
-    return NULL;
+    /* now we need to find out which peer that we actually need to send to! */
+    if (treeoflife_route_to_peer(c->treeoflife, binlen, binrep, dst_peerkey)) {
+      debug("!treeoflife_route_to_peer\n");
+      return NULL;
+    }
   }
+
 
   /*debug("READY TO SEND!!!\n");*/
 
   /*[TYPE(2)][KEY_LENGTH][DST_BINLEN(1)][DST_BINROUTE(ROUTE_LENGTH)][SRC_BINLEN(1)][SRC_BINROUTE(ROUTE_LENGTH)]*/
 
   mbuf_advance(mb, WIRE_IPV6_HEADER_LENGTH - (2+KEY_LENGTH+1+ROUTE_LENGTH+1+ROUTE_LENGTH));
-    top_pos = mb->pos;
-    mbuf_write_u16(mb, arch_htobe16(next_header));
-    mbuf_write_mem(mb, c->treeoflife->selfkey, KEY_LENGTH);
+  top_pos = mb->pos;
+  mbuf_write_u16(mb, arch_htobe16(next_header));
+  mbuf_write_mem(mb, c->treeoflife->selfkey, KEY_LENGTH);
 
-    /* DST */
-    mbuf_write_u8(mb, binlen);
-    mbuf_write_mem(mb, binrep, ROUTE_LENGTH);
+  /* DST */
+  mbuf_write_u8(mb, binlen);
+  mbuf_write_mem(mb, binrep, ROUTE_LENGTH);
 
   /* SRC */
-    mbuf_write_u8(mb, c->treeoflife->zone[0].binlen);
-    mbuf_write_mem(mb, c->treeoflife->zone[0].binrep, ROUTE_LENGTH);
-    mbuf_set_pos(mb, top_pos);
+  mbuf_write_u8(mb, c->treeoflife->zone[0].binlen);
+  mbuf_write_mem(mb, c->treeoflife->zone[0].binrep, ROUTE_LENGTH);
+  mbuf_set_pos(mb, top_pos);
 
   /*debug("ATTEMPTING SEND: [%W];\n", mbuf_buf(mb), mbuf_get_left(mb));*/
 
-    if (c->treeoflife->cb)
-      c->treeoflife->cb(c->treeoflife, dst_peer, mb, c->treeoflife->cb_arg);
+  if (c->treeoflife->cb)
+    c->treeoflife->cb(c->treeoflife, dst_peerkey, mb, c->treeoflife->cb_arg);
 
   return NULL;
 }
@@ -302,7 +334,7 @@ int conduits_connect_tunif(struct conduits *conduits, struct csock *csock)
 }
 
 static void _tree_cb( struct treeoflife *t
-                    , struct treeoflife_peer *peer
+                    , uint8_t peerkey[KEY_LENGTH]
                     , struct mbuf *mb
                     , void *arg)
 {
@@ -310,11 +342,12 @@ static void _tree_cb( struct treeoflife *t
   struct mbuf *mb_clone;
 
   struct conduits *c = arg;
-  struct conduit_peer *p = container_of(peer, struct conduit_peer, tolpeer);
+  struct conduit_peer *p = NULL;
+  /*container_of(peer, struct conduit_peer, tolpeer);*/
 
   debug("_tree_cb\n");
 
-  if (!peer) {
+  if (!peerkey) {
     /*debug("_tree_cb BROADCAST\n");*/
     LIST_FOREACH(&c->allpeers, le) {
       p = le->data;
@@ -324,8 +357,19 @@ static void _tree_cb( struct treeoflife *t
       mb_clone = mem_deref(mb_clone);
     }
   } else {
-    debug("DIRECTLY sending %u bytes to peer on %s\n", mbuf_get_left(mb), p->conduit->name);
-    _tree_cb_send(p, mb);
+    debug("DIRECTLY sending %u bytes to peer key %w\n", mbuf_get_left(mb), peerkey, KEY_LENGTH);
+    LIST_FOREACH(&c->allpeers, le) {
+      p = le->data;
+      /* list should be sorted so that established nodes are higher... */
+      /* this means that nodes that have the best stats, etc are chosen */
+      if (memcmp(p->caes->remote_ip6 + 1, peerkey, KEY_LENGTH) ) {/* X:TODO X:LENGTH */
+        continue;
+      }
+      debug("\n\nFOUND peer key %w\n", peerkey, KEY_LENGTH);
+      _tree_cb_send(p, mb);
+      return;
+    }
+    debug("\n\nDID NOT FIND peer key %w\n", peerkey, KEY_LENGTH);
   }
   return;
 }
@@ -581,7 +625,7 @@ static struct csock *conduits_handle_beacon( struct conduit *conduit
 }
 
 static void _conduits_process_endpoints( struct conduits *c
-                     , struct conduit_peer *p)
+                                       , struct conduit_peer *p)
 {
   struct le *le;
   struct conduit_peer *_p;
@@ -591,14 +635,8 @@ static void _conduits_process_endpoints( struct conduits *c
         /* similar peers?? */
         if (p->conduit == _p->conduit) {
           /* update and destroy old peer */
-#if 0
-              p->addr.path = _p->addr.path;
-              p->relaymap_cs.adj = _p->relaymap_cs.adj;
-              p->relaymap_cs.adj->adj = &p->relaymap_cs;
-              _p->relaymap_cs.adj = NULL;
-#endif
-              _p = mem_deref(_p);
-              return;
+          _p = mem_deref(_p);
+          return;
         }
       }
   }
@@ -606,7 +644,7 @@ static void _conduits_process_endpoints( struct conduits *c
 }
 
 static struct csock *conduits_handle_incoming( struct csock *csock
-                       , struct mbuf *mb)
+                                             , struct mbuf *mb)
 {
 
   struct conduit *conduit = (struct conduit *)csock;
@@ -687,49 +725,32 @@ static struct csock *conduits_handle_incoming( struct csock *csock
 
   enum CAENGINE_STATE cae_state = caengine_session_state(p->caes);
 
-    if (p->state < CONDUIT_PEERSTATE_ESTABLISHED) {
-        p->state = (enum CONDUIT_PEERSTATE)cae_state;
-#if 0
-        cd_relaymap_slot_setstate((struct cd_relaymap_slot *)&p->relaymap_cs, RELAYMAP_SLOT_STATE_ISUP);
-#endif
+  if (p->state < CONDUIT_PEERSTATE_ESTABLISHED) {
+    p->state = (enum CONDUIT_PEERSTATE)cae_state;
 
-        memcpy(p->addr.key, p->caes->remote_pubkey, 32);
-        addr_prefix(&p->addr);
+    memcpy(p->addr.key, p->caes->remote_pubkey, 32);
+    addr_prefix(&p->addr);
 
-        if (cae_state == CAENGINE_STATE_ESTABLISHED) {
-            _conduits_process_endpoints(conduit->ctx, p);
-        } else {
-            if (mbuf_get_left(mb) < 8 || mbuf_buf(mb)[7] != 1) {
-                /*error("DROP: NO CAE?\n");*/
-                return 0;
-            }
-#if 0
-             else {
-                if ((p->cnt_ping + 1) % 7) {
-                    _send_ping(p);
-                }
-            }
-#endif
-        }
-    } else if (p->state == CONDUIT_PEERSTATE_UNRESPONSIVE
-        && cae_state == CAENGINE_STATE_ESTABLISHED)
-    {
-        p->state = CONDUIT_PEERSTATE_ESTABLISHED;
-#if 0
-        cd_relaymap_slot_setstate((struct cd_relaymap_slot *)&p->relaymap_cs, RELAYMAP_SLOT_STATE_ISUP);
-#endif
+    if (cae_state == CAENGINE_STATE_ESTABLISHED) {
+      _conduits_process_endpoints(conduit->ctx, p);
     } else {
-        p->lastmsg_ts = tmr_jiffies();
+      if (mbuf_get_left(mb) < 8 || mbuf_buf(mb)[7] != 1) {
+          /*error("DROP: NO CAE?\n");*/
+          return 0;
+      }
     }
+  } else if (p->state == CONDUIT_PEERSTATE_UNRESPONSIVE
+            && cae_state == CAENGINE_STATE_ESTABLISHED)
+  {
+    p->state = CONDUIT_PEERSTATE_ESTABLISHED;
+  } else {
+    p->lastmsg_ts = tmr_jiffies();
+  }
 
-    /* process packets */
-
-    /*return csock_next(&p->relaymap_cs, mb);*/
-
-    treeoflife_msg_recv( conduit->ctx->treeoflife
-                       , (struct treeoflife_peer *)p
-                       , mb
-                       , 1);
+  treeoflife_msg_recv( conduit->ctx->treeoflife
+                     , p->caes->remote_ip6 + 1 /* X:TODO X:LENGTH */
+                     , mb
+                     , 1);
 
   return NULL;
 }
