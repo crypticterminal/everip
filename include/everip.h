@@ -765,6 +765,21 @@ struct tunif {
 
 int tunif_init( struct tunif **tunifp );
 
+
+/*
+ * Stacks
+ */
+
+struct stack_needle;
+
+uint8_t stack_height_get(const uint8_t *binrep);
+void stack_height_set(uint8_t *binrep, uint8_t height);
+uint16_t stack_calc_size(uint8_t *binrep, uint8_t *height);
+size_t stack_layer_add(uint8_t *binrep, uint64_t nodeid);
+int stack_step(struct stack_needle *needle);
+int stack_linf_diff(uint8_t left[ROUTE_LENGTH], uint8_t right[ROUTE_LENGTH], int *places);
+int stack_debug(struct re_printf *pf, const uint8_t *binrep);
+
 /*
  * Tree of Life
  */

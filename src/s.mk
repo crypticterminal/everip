@@ -51,6 +51,7 @@ endif
 
 #tree of life
 SRCS	+= treeoflife/atfield.c
+SRCS	+= treeoflife/stack.c
 SRCS	+= treeoflife/treeoflife.c
 
 ifneq ($(STATIC),)

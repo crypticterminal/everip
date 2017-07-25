@@ -57,7 +57,7 @@ static const struct test tests[] = {
 	,TEST(test_network)
 	//,TEST(test_tun)
 	,TEST(test_conduits)
-	//,TEST(test_treeoflife)
+	,TEST(test_treeoflife)
 	//,TEST(test_caengine)
 };
 
