@@ -160,6 +160,10 @@ static void _eth_read_handler(int flags, void *arg)
   csaddr->len = CSOCK_ADDR_LENMAC;
   csaddr->flags = tmp.flags;
 
+  if (addr.sll_pkttype == PACKET_BROADCAST) {
+    csaddr->flags |= CSOCK_ADDR_BCAST;
+  }
+
   debug("HASH IS SET TO %u [%W]\n", csaddr->hash, addr.sll_addr, 6);
 
   mbuf_set_pos(mb, pfix+WIRE_ETHFRAME_LENGTH);

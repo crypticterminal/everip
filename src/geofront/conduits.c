@@ -474,15 +474,15 @@ static bool _peer_find_cb(struct le *le, void *arg)
 struct conduit_peer *conduits_peer_find( const struct conduits *conduits
                        , const struct csock_addr *csaddr )
 {
-        if (!conduits || !csaddr)
-                return NULL;
+  if (!conduits || !csaddr)
+          return NULL;
 
-         /*debug("HASH IS SET TO %u\n", csaddr->hash);*/
+  debug("HASH IS SET TO %u\n", csaddr->hash);
 
-        return list_ledata(hash_lookup( conduits->peers
-                        , csaddr->hash
-                        , _peer_find_cb
-                        , (void *)csaddr));
+  return list_ledata(hash_lookup( conduits->peers
+                  , csaddr->hash
+                  , _peer_find_cb
+                  , (void *)csaddr));
 }
 
 
@@ -523,9 +523,9 @@ static struct csock *_relaymap_send( struct csock *csock
 
 static struct conduit_peer *
 conduit_peer_create( struct conduit *conduit
-           , const struct csock_addr *csaddr
-           , const uint8_t remote_pubkey[32]
-           , bool outside_initiation )
+                   , const struct csock_addr *csaddr
+                   , const uint8_t remote_pubkey[32]
+                   , bool outside_initiation )
 {
   int err = 0;
   struct conduit_peer *p;
@@ -533,31 +533,33 @@ conduit_peer_create( struct conduit *conduit
   if (!p)
     return NULL;
 
-  debug("\n\nNEW PEER\n\n");
+  debug("\n\nNEW PEER (%s)\n\n", outside_initiation ? "OUTSIDE" : "NOT OUTSIDE");
 
   p->conduit = conduit;
 
   ASSERT_TRUE(csaddr->len <= sizeof(struct csock_addr));
   memcpy(&p->csaddr, csaddr, sizeof(struct csock_addr));
 
+  p->csaddr.flags &= ~(CSOCK_ADDR_BCAST);
+
 /*  debug("csaddr->len = %u|%u\n", (&p->csaddr)->len, (&p->csaddr)->a.sa.len);
 */
 
-  /*debug("HASH IS SET TO %u\n", csaddr->hash);*/
+  debug("HASH IS SET TO %u\n", csaddr->hash);
 
   hash_append( conduit->ctx->peers
-         , csaddr->hash
-         , &p->le
-         , p
-         );
+             , csaddr->hash
+             , &p->le
+             , p
+             );
 
   list_append(&conduit->ctx->allpeers, &p->le_all, p);
 
   /* create cae_session */
   err = caengine_session_new( &p->caes
-                , everip_caengine()
-                , remote_pubkey
-                , ( outside_initiation ? true : false));
+                            , everip_caengine()
+                            , remote_pubkey
+                            , ( outside_initiation ? true : false));
   if (err) {
     error("caengine_session_new %m", err);
     p = mem_deref(p);
@@ -567,9 +569,9 @@ conduit_peer_create( struct conduit *conduit
   p->outside_initiation = outside_initiation;
 
   /* setup timers */
-  p->lastmsg_ts =   tmr_jiffies()
-          - MSEC_PING_LAZY
-          - 1;
+  p->lastmsg_ts = tmr_jiffies()
+                - MSEC_PING_LAZY
+                - 1;
 
   return p;
 }
@@ -692,22 +694,10 @@ static struct csock *conduits_handle_incoming( struct csock *csock
 
     /* REGISTRATION */
 
-#if 0
-    p->relaymap_cs.send = _relaymap_send;
-
-    err = cd_relaymap_slot_add( &p->addr.path
-                          , conduit->ctx->relaymap
-                    , &p->relaymap_cs );
-    if (err) {
-      p = mem_deref(p);
-      return NULL;
-    }
-#endif
-
   } else {
     /* HAVE a PEER! */
-      caengine_session_resetiftimedout(p->caes);
-      mbuf_set_pos(mb, pfix);
+    caengine_session_resetiftimedout(p->caes);
+    mbuf_set_pos(mb, pfix);
     if (caengine_session_decrypt(p->caes, mb)) {
       return NULL;
     }
@@ -769,7 +759,11 @@ int conduits_peer_bootstrap( struct conduit *conduit
   if (!conduit || !c || !remote_pubkey)
     return EINVAL;
 
-  debug("conduits_peer_bootstrap [%J]\n", &csaddr->a.sa);
+  debug( "conduits_peer_bootstrap [%J][%s|%s]\n"
+       , &csaddr->a.sa
+       , pword
+       , login
+       );
   /* get conduit from conduit_id */
 
   /* calculate address for validity */
