@@ -24,7 +24,6 @@ extern "C" {
 
 #include "__arch.h"
 #include "__wires.h"
-#include "__labels.h"
 
 #define EVERIP_VERSION "0.0.3"
 
@@ -198,6 +197,9 @@ struct csock_addr {
     uint8_t mac[6];
   } a;
 };
+
+int csaddr_hash_udp(const struct sa *src, struct csock_addr *csaddr);
+
 
 struct PACKONE rmap_wireheader
 {
@@ -546,7 +548,7 @@ int caengine_address_frompubkey(uint8_t out[16], const uint8_t in[32]);
 int caengine_debug(struct re_printf *pf, struct caengine *c);
 
 void cryptosign_skpk_fromcurve25519(uint8_t skpk[64], uint8_t sk[32]);
-inline void cryptosign_pk_fromskpk(uint8_t pk[32], uint8_t skpk[64]);
+void cryptosign_pk_fromskpk(uint8_t pk[32], uint8_t skpk[64]);
 void cryptosign_bytes(uint8_t skpk[64], uint8_t *m, size_t mlen);
 int cryptosign_bytes_verify(uint8_t pk[32], uint8_t *s, uint8_t *m, size_t mlen);
 

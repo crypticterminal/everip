@@ -69,21 +69,8 @@ static void recv_handler(const struct sa *src, struct mbuf *mb, void *arg)
 
 	mbuf_set_pos(mb, 0);
 	struct csock_addr *csaddr = (struct csock_addr *)(void *)mbuf_buf(mb);
-	memset(csaddr, 0, sizeof(struct csock_addr));
 
-	struct PACKONE {
-		uint16_t flags;
-		uint32_t hash;
-	} tmp;
-
-	tmp.flags = 0;
-	tmp.hash = sa_hash(src, SA_ALL);
-
-	csaddr->hash = hash_joaat((uint8_t *)&tmp, 6);
-	csaddr->len = CSOCK_ADDR_LENTOP + src->len;
-	csaddr->flags = tmp.flags;
-
-	sa_cpy(&csaddr->a.sa, src);
+	csaddr_hash_udp(src, csaddr);
 
 	mbuf_set_pos(mb, pfix);
 	csock_forward(&udp_c->csock, mb);
