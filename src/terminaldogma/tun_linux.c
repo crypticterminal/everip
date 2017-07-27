@@ -49,20 +49,19 @@ static struct csock *_from_terminaldogma( struct csock *csock
 		return NULL;
 	}
 
-    ((uint16_t*)(void *)mbuf_buf(mb))[0] = 0;
-    ((uint16_t*)(void *)mbuf_buf(mb))[1] = arch_htobe16(0x86DD);
+  ((uint16_t*)(void *)mbuf_buf(mb))[0] = 0;
+  ((uint16_t*)(void *)mbuf_buf(mb))[1] = arch_htobe16(0x86DD);
 
-    error("going back out...%u[%w]\n", mbuf_get_left(mb), mbuf_buf(mb), 8);
+  /*error("going back out...%u[%w]\n", mbuf_get_left(mb), mbuf_buf(mb), 8);*/
 
-    n = write(tun->fd, mbuf_buf(mb), mbuf_get_left(mb));
-	error("WROTE %d\n", n);
+  n = write(tun->fd, mbuf_buf(mb), mbuf_get_left(mb));
+	/*error("WROTE %d\n", n);*/
 
 	if (n < 0) {
 		err = errno;
 
 		if (EAGAIN == err)
 			goto out;
-
 #ifdef EWOULDBLOCK
 		if (EWOULDBLOCK == err)
 			goto out;
