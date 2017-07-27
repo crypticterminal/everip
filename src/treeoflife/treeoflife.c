@@ -429,10 +429,14 @@ static void treeoflife_children_notify(struct treeoflife *t, struct treeoflife_z
     }
 #else
     LIST_FOREACH(&t->dht_items, le) {
+retry:
       dhti = le->data;
       if (!(dhti->mode & TREEOFLIFE_DHT_MODE_MYCHLD)) {
         if (!(dhti->mode & TREEOFLIFE_DHT_MODE_OHPEER)) {
+          le = le->next;
           mem_deref(dhti);
+          if (!le) break;
+          goto retry;
         }
         continue;
       }
