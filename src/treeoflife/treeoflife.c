@@ -430,8 +430,12 @@ static void treeoflife_children_notify(struct treeoflife *t, struct treeoflife_z
 #else
     LIST_FOREACH(&t->dht_items, le) {
       dhti = le->data;
-      if (!(dhti->mode & TREEOFLIFE_DHT_MODE_MYCHLD))
+      if (!(dhti->mode & TREEOFLIFE_DHT_MODE_MYCHLD)) {
+        if (!(dhti->mode & TREEOFLIFE_DHT_MODE_OHPEER)) {
+          mem_deref(dhti);
+        }
         continue;
+      }
       mb_clone = mbuf_clone(mb);
 
       memcpy(dhti->binrep, zone->binrep, ROUTE_LENGTH);
@@ -837,7 +841,7 @@ dht_redirect_or_stay:
 
     /*debug("GOT DIFF OF %d\n", _diff);*/
 
-#if 0 /* not sure if this is required these days.. */
+#if 1 /* not sure if this is required these days.. */
     treeoflife_dht_add_or_update( t
                                 , NULL
                                 , NULL
@@ -999,15 +1003,17 @@ static void _tmr_cb(void *data)
   mb = mem_deref(mb);
 
   /* JUST FOR TESTING! */
-  treeoflife_dht_search_or_notify(t, &t->zone[0], t->selfkey, false);
+  if (t->zone[0].binlen) { /* we are bootstrapped! */
+    treeoflife_dht_search_or_notify(t, &t->zone[0], t->selfkey, false);
 
-  /* ask local nodes for their coords... */
-  LIST_FOREACH(&t->dht_items, le) {
-    dhti = le->data;
-    if (   !(dhti->mode & TREEOFLIFE_DHT_MODE_OHPEER)
-        || !(dhti->mode & TREEOFLIFE_DHT_MODE_SEARCH))
-      continue;
-    treeoflife_dht_search_or_notify(t, &t->zone[0], dhti->key, true);
+    /* ask local nodes for their coords... */
+    LIST_FOREACH(&t->dht_items, le) {
+      dhti = le->data;
+      if (   !(dhti->mode & TREEOFLIFE_DHT_MODE_OHPEER)
+          || !(dhti->mode & TREEOFLIFE_DHT_MODE_SEARCH))
+        continue;
+      treeoflife_dht_search_or_notify(t, &t->zone[0], dhti->key, true);
+    }
   }
   tmr_start(&t->tmr, 2000 + ((uint8_t)rand_char()), _tmr_cb, t);
 }
@@ -1096,7 +1102,7 @@ int treeoflife_init( struct treeoflife **treeoflifep, uint8_t public_key[KEY_LEN
   {
     memcpy(t->zone[i].root, public_key, KEY_LENGTH);
     /* judy */
-    t->zone[i].binlen = 1;
+    t->zone[i].binlen = 0;
     memset(t->zone[i].binrep, 0, ROUTE_LENGTH);
     /*slide_compress(0, t->zone[i].binrep, &t->zone[i].binlen);*/
   }
