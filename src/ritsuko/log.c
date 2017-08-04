@@ -31,7 +31,6 @@ static struct {
 	true
 };
 
-
 void log_register_handler(struct log *log)
 {
 	if (!log)
@@ -120,11 +119,15 @@ void loglv(enum log_level level, const char *fmt, ...)
 {
 	va_list ap;
 
-	if ((LEVEL_DEBUG == level) && !lg.debug)
+	if ((LEVEL_DEBUG == level) && !lg.debug){
+		fflush(stdout); /* weird bug */
 		return;
+	}
 
-	if ((LEVEL_INFO == level) && !lg.info)
+	if ((LEVEL_INFO == level) && !lg.info) {
+		fflush(stdout); /* weird bug */
 		return;
+	}
 
 	va_start(ap, fmt);
 	vlog(level, fmt, ap);
@@ -136,8 +139,10 @@ void debug(const char *fmt, ...)
 {
 	va_list ap;
 
-	if (!lg.debug)
+	if (!lg.debug) {
+		fflush(stdout); /* weird bug */
 		return;
+	}
 
 	va_start(ap, fmt);
 	vlog(LEVEL_DEBUG, fmt, ap);
@@ -149,8 +154,10 @@ void info(const char *fmt, ...)
 {
 	va_list ap;
 
-	if (!lg.info)
+	if (!lg.info) {
+		fflush(stdout); /* weird bug */
 		return;
+	}
 
 	va_start(ap, fmt);
 	vlog(LEVEL_INFO, fmt, ap);

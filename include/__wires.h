@@ -139,7 +139,7 @@ struct wire_ethframe
 ASSERT_COMPILETIME(WIRE_ETHFRAME_LENGTH == sizeof(struct wire_ethframe));
 
 
-struct PACKONE _wire_ipv6_header
+struct _wire_ipv6_header
 {
     uint16_t version;
     uint16_t flow_be;
@@ -148,6 +148,42 @@ struct PACKONE _wire_ipv6_header
     uint8_t hop;
     uint8_t src[16];
     uint8_t dst[16];
-};
+} PACKONE;
 #define WIRE_IPV6_HEADER_LENGTH 40
 ASSERT_COMPILETIME(sizeof(struct _wire_ipv6_header) == WIRE_IPV6_HEADER_LENGTH);
+
+struct wire_ipv6_neighborsolicitation {
+    uint8_t code;
+    uint8_t z;
+    uint16_t checksum;
+    uint32_t reserved;
+    uint8_t target[16];
+} PACKONE;
+#define WIRE_IPV6_NEIGHBORSOLICITATION_LENGTH 24
+ASSERT_COMPILETIME(sizeof(struct wire_ipv6_neighborsolicitation) == WIRE_IPV6_NEIGHBORSOLICITATION_LENGTH);
+
+struct wire_ipv6_neighboradvertisement_mac {
+#define WIRE_IPV6_NEIGHBORADVERTISEMENT_MAC_SELF 1
+#define WIRE_IPV6_NEIGHBORADVERTISEMENT_MAC_TARGET 2
+    uint8_t type;
+    uint8_t len;
+    uint8_t mac[6];
+} PACKONE;
+#define WIRE_IPV6_NEIGHBORADVERTISEMENT_MAC_LENGTH 8
+ASSERT_COMPILETIME(sizeof(struct wire_ipv6_neighboradvertisement_mac) == WIRE_IPV6_NEIGHBORADVERTISEMENT_MAC_LENGTH);
+
+struct wire_ipv6_neighboradvertisement {
+    uint8_t code;
+    uint8_t z;
+    uint16_t checksum;
+#define WIRE_IPV6_NEIGHBORADVERTISEMENT_ROUTER    (1<<7)
+#define WIRE_IPV6_NEIGHBORADVERTISEMENT_SOLICITED (1<<6)
+#define WIRE_IPV6_NEIGHBORADVERTISEMENT_OVERRIDE  (1<<5)
+    uint8_t bits;
+    uint8_t reserved[3];
+    uint8_t target[16];
+} PACKONE;
+#define WIRE_IPV6_NEIGHBORADVERTISEMENT_LENGTH 24
+ASSERT_COMPILETIME(sizeof(struct wire_ipv6_neighboradvertisement) == WIRE_IPV6_NEIGHBORADVERTISEMENT_LENGTH);
+
+

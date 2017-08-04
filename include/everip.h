@@ -757,7 +757,8 @@ int cd_manager_init( struct cd_manager **managerp, struct magi_eventdriver *even
  * TUN
  */
 
-#define TUN_IFNAMSIZ (16)
+/* windows has long device names */
+#define TUN_IFNAMSIZ (512)
 
 struct tunif {
   struct csock tmldogma_cs;

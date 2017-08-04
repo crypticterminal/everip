@@ -280,7 +280,9 @@ int treeoflife_route_to_peer( struct treeoflife *t
   struct treeoflife_dht_item *dhti = NULL;
   struct treeoflife_dht_item *dhti_chosen = NULL;
 
-  int local_diff, temp_diff, chosen_diff;
+  int local_diff = 0;
+  int temp_diff = 0;
+  int chosen_diff = 0;
 
   for (int i = 0; i < ZONE_COUNT; ++i) {
     zone = &t->zone[i];
@@ -893,7 +895,7 @@ process_pkt:
 
       mbuf_advance(mb, -4);
       ((uint16_t*)(void *)mbuf_buf(mb))[0] = 0;
-      ((uint16_t*)(void *)mbuf_buf(mb))[1] = 7680;
+      ((uint16_t*)(void *)mbuf_buf(mb))[1] = arch_htobe16(0x86DD);
 
       t->tun_cb(t, mb, t->tun_cb_arg);
     }
@@ -1007,17 +1009,16 @@ static void _tmr_cb(void *data)
   mb = mem_deref(mb);
 
   /* JUST FOR TESTING! */
-  if (t->zone[0].binlen) { /* we are bootstrapped! */
+  if (t->zone[0].binlen > 1) { /* we are bootstrapped! */
     treeoflife_dht_search_or_notify(t, &t->zone[0], t->selfkey, false);
-
-    /* ask local nodes for their coords... */
-    LIST_FOREACH(&t->dht_items, le) {
-      dhti = le->data;
-      if (   !(dhti->mode & TREEOFLIFE_DHT_MODE_OHPEER)
-          || !(dhti->mode & TREEOFLIFE_DHT_MODE_SEARCH))
-        continue;
-      treeoflife_dht_search_or_notify(t, &t->zone[0], dhti->key, true);
-    }
+  }
+  /* ask local nodes for their coords... */
+  LIST_FOREACH(&t->dht_items, le) {
+    dhti = le->data;
+    if (   !(dhti->mode & TREEOFLIFE_DHT_MODE_OHPEER)
+        || !(dhti->mode & TREEOFLIFE_DHT_MODE_SEARCH))
+      continue;
+    treeoflife_dht_search_or_notify(t, &t->zone[0], dhti->key, true);
   }
   tmr_start(&t->tmr, 2000 + ((uint8_t)rand_char()), _tmr_cb, t);
 }
@@ -1106,7 +1107,7 @@ int treeoflife_init( struct treeoflife **treeoflifep, uint8_t public_key[KEY_LEN
   {
     memcpy(t->zone[i].root, public_key, KEY_LENGTH);
     /* judy */
-    t->zone[i].binlen = 0;
+    t->zone[i].binlen = 1;
     memset(t->zone[i].binrep, 0, ROUTE_LENGTH);
     /*slide_compress(0, t->zone[i].binrep, &t->zone[i].binlen);*/
   }

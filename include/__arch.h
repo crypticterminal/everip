@@ -128,12 +128,12 @@ static inline uint64_t reverse_b64(uint64_t i)
     (void) (&_max1 == &_max2);      \
     _max1 > _max2 ? _max1 : _max2; })
 
-static inline uint32_t chksum_one( const uint8_t* buf
-                         , uint16_t len
-                         , uint32_t s )
+static inline uint32_t chksum_one( const uint8_t *buf
+                                 , uint16_t len
+                                 , uint32_t s )
 {
     for (uint32_t i = 0; i < len / 2; i++) {
-        s += ((uint16_t*)(void*)buf)[i];
+        s += ((uint16_t *)(void *)buf)[i];
         /* get around the warning with (void*) */
     }
     if (len % 2) {
@@ -149,14 +149,33 @@ static inline uint32_t chksum_one32(uint32_t i, uint32_t s)
 
 static inline uint16_t chksum_finish(uint32_t s)
 {
-    while (s > 0xFFFF) { s = (s >> 16) + (s & 0xFFFF); }
-    return ~s;
+  while (s > 0xFFFF) { s = (s >> 16) + (s & 0xFFFF); }
+  return ~s;
 }
 
 static inline uint16_t chksum_buf(const uint8_t* buf, uint16_t len)
 {
-    ASSERT_TRUE(!((uintptr_t)buf % 2));
-    return chksum_finish(chksum_one(buf, len, 0));
+  ASSERT_TRUE(!((uintptr_t)buf % 2));
+  return chksum_finish(chksum_one(buf, len, 0));
+}
+
+static inline uint16_t chksum_ipv6( const uint8_t * restrict addrs
+                                   ,const uint8_t * restrict pkt
+                                   ,uint16_t l
+                                   ,uint32_t t_be)
+{
+  uint32_t s;
+  uint32_t l_be;
+
+  ASSERT_TRUE(!((uintptr_t)addrs % 2));
+  ASSERT_TRUE(!((uintptr_t)pkt % 2));
+
+  s = chksum_one(addrs, 32, 0);
+  l_be = arch_htobe32(l);
+  s = chksum_one32(l_be, s);
+  s = chksum_one32(t_be, s);
+  s = chksum_one(pkt, l, s);
+  return chksum_finish(s);
 }
 
 enum {
