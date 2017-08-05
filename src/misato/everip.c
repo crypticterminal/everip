@@ -47,6 +47,8 @@ static struct everip {
 
     uint16_t udp_port;
 
+    char *license_filename;
+
 } everip;
 
 int everip_init(void)
@@ -178,7 +180,6 @@ void everip_close(void)
     GENDO_DEINIT;
 #endif
 
-
     everip.netevent = mem_deref(everip.netevent);
 
     /* reverse from init */
@@ -189,6 +190,8 @@ void everip_close(void)
     everip.net = mem_deref(everip.net);
     everip.atfield = mem_deref(everip.atfield);
     everip.treeoflife = mem_deref(everip.treeoflife);
+
+    everip.license_filename = mem_deref(everip.license_filename);
 }
 
 
@@ -231,3 +234,4 @@ uint16_t everip_udpport_get(void)
 {
     return everip.udp_port;
 }
+

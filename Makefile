@@ -23,6 +23,9 @@ ifndef LIBSODIUM_PATH
 LIBSODIUM_PATH	:= $(shell [ -d ../libs ] && echo "../libs")
 endif
 
+GIT_VERSION = $(shell git describe --dirty --abbrev=20 --always)
+CFLAGS    += -DGITVERSION="\"$(GIT_VERSION)\""
+
 CFLAGS    += -I. -Iinclude -I$(LIBRE_INC) -I$(SYSROOT)/include
 CFLAGS    += -I$(LIBSODIUM_PATH)/include
 
@@ -141,21 +144,22 @@ ifeq ($(LIBSODIUM_PATH),)
 	@exit 2
 endif
 
+LIBS_PRE := 
+
 ifneq ($(USEGENDO),)
-LIBS  += ../libgendo/libgendo.a
+LIBS_PRE  += ../libgendo/libgendo.a
 LIB_OBJS+= ../libgendo/libgendo.a
 CFLAGS    += -I../libgendo/include
 CFLAGS += -DHAVE_GENDO
 endif
 
-LIBS  += $(LIBSODIUM_PATH)/lib/libsodium.a
-LIB_OBJS+= $(LIBSODIUM_PATH)/lib/libsodium.a
+LIB_OBJS += $(LIBSODIUM_PATH)/lib/libsodium.a
 
 Makefile:	mk/*.mk $(MOD_MK) $(LIBRE_MK)
 
-$(SHARED): $(LIB_OBJS)
-	@echo "  LD      $@"
-	$(HIDE)$(LD) $(LFLAGS) $(SH_LFLAGS) $^ -L$(LIBRE_SO) -lre $(LIBS) -o $@
+#$(SHARED): $(LIB_OBJS)
+#	@echo "  LD      $@"
+#	$(HIDE)$(LD) $(LFLAGS) $(SH_LFLAGS) $^ -L$(LIBRE_SO) -lre $(LIBS) -o $@
 
 $(STATICLIB): $(LIB_OBJS)
 	@echo "  AR      $@"
@@ -169,7 +173,7 @@ endif
 $(BIN):	$(APP_OBJS)
 #ifneq ($(GPROF),)
 	@echo "  LDS     $@"
-	$(HIDE)$(LD) $(LFLAGS) $(APP_LFLAGS) $^ $(LIBS) $(LIBRE_SO)/libre.a -o $@
+	$(HIDE)$(LD) $(LFLAGS) $(APP_LFLAGS) $^ $(LIBS_PRE) $(LIBRE_SO)/libre.a $(LIBSODIUM_PATH)/lib/libsodium.a $(LIBS) -o $@
 #else
 #	@echo "  LD      $@"
 #	$(HIDE)$(LD) $(LFLAGS) $(APP_LFLAGS) $^ \
@@ -192,7 +196,7 @@ $(TEST_BIN):	$(STATICLIB) $(TEST_OBJS)
 	@echo "  LD      $@"
 	$(HIDE)$(CXX) $(LFLAGS) $(TEST_OBJS) \
 		-L. \
-		-l$(PROJECT) $(LIBRE_PATH)/libre.a $(LIBSODIUM_PATH)/lib/libsodium.a $(LIBS) $(TEST_LIBS) -o $@
+		-l$(PROJECT) $(LIBS_PRE) -l$(PROJECT) $(LIBRE_PATH)/libre.a $(LIBSODIUM_PATH)/lib/libsodium.a $(LIBS) $(TEST_LIBS) -o $@
 
 $(BUILD)/%.o: %.c $(BUILD) Makefile $(APP_MK)
 	@echo "  CC      $@"
@@ -224,7 +228,6 @@ clean:
 	`find . -name "*~"` \
 	`find . -name "\.\#*"`
 	@find . -name "*.gcda" -exec rm {} \;
-	@lcov --directory . --zerocounters
 
 .PHONY: lcov
 lcov:

@@ -1039,15 +1039,22 @@ struct cmds *cmds_find(const struct commands *commands,
 int  everip_init(void);
 void everip_close(void);
 struct network *everip_network(void);
-struct mrpinger *everip_mrpinger(void);
 struct commands *everip_commands(void);
 struct caengine *everip_caengine(void);
 struct conduits *everip_conduits(void);
 struct atfield *everip_atfield(void);
 struct treeoflife *everip_treeoflife(void);
 
+/* udp port */
 void everip_udpport_set(uint16_t port);
 uint16_t everip_udpport_get(void);
+
+static inline void main_goodbye(void)
+{
+  re_printf("Good-bye.\n");
+  module_app_unload();
+  re_cancel();
+}
 
 #ifdef __cplusplus
 }

@@ -36,9 +36,9 @@ SRCS	+= ritsuko/log.c
 SRCS	+= ritsuko/net.c
 SRCS	+= ritsuko/mrpinger.c
 SRCS	+= ritsuko/addr.c
-SRCS	+= ritsuko/bencode.c
-SRCS	+= ritsuko/bencode_dec.c
-SRCS	+= ritsuko/bencode_dec_od.c
+#SRCS	+= ritsuko/bencode.c
+#SRCS	+= ritsuko/bencode_dec.c
+#SRCS	+= ritsuko/bencode_dec_od.c
 ifeq ($(OS),darwin)
 SRCS	+= ritsuko/net_darwin.c
 endif
