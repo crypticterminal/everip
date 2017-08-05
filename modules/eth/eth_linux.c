@@ -300,7 +300,10 @@ static bool _if_handler( const char *ifname
   if (err) {
     err = re_regex(ifname, strlen(ifname), "usb[0-9]+", &num);
     if (err) {
-      return false;
+      err = re_regex(ifname, strlen(ifname), "wlan[0-9]+", &num);
+      if (err) {
+        return false;
+      }
     }
     /*error("%s is not an ethernet if! [%u]\n", ifname, err);*/
   }
