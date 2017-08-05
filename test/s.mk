@@ -9,3 +9,4 @@ TEST_SRCS	+= test.c
 TEST_SRCS	+= main.c
 #TEST_SRCS	+= tun.c
 TEST_SRCS	+= conduits.c
+TEST_SRCS	+= checksum.c
