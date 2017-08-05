@@ -47,99 +47,100 @@ https://opensource.apple.com/source/xnu/xnu-2050.7.9/bsd/net/if_utun.c.auto.html
 */
 
 static struct csock *_from_terminaldogma( struct csock *csock
-							       		, struct mbuf *mb )
+                        , struct mbuf *mb )
 {
-	ssize_t n;
+  ssize_t n;
 
-	if (!csock || !mb)
-		return NULL;
+  if (!csock || !mb)
+    return NULL;
 
-	struct tunif *tun = container_of(csock, struct tunif, tmldogma_cs);
+  struct tunif *tun = container_of(csock, struct tunif, tmldogma_cs);
 
-	if (mbuf_get_left(mb) < 4) {
-		return NULL;
-	}
+  if (mbuf_get_left(mb) < 4) {
+    return NULL;
+  }
 
-	/* hack; we only support ipv6 */
-    ((uint16_t*)(void *)mbuf_buf(mb))[0] = 0;
-    ((uint16_t*)(void *)mbuf_buf(mb))[1] = 7680;
+  /* hack; we only support ipv6 */
+  ((uint16_t*)(void *)mbuf_buf(mb))[0] = 0;
+  ((uint16_t*)(void *)mbuf_buf(mb))[1] = 7680;
 
-    n = write(tun->fd, mbuf_buf(mb), mbuf_get_left(mb));
+  n = write(tun->fd, mbuf_buf(mb), mbuf_get_left(mb));
 
-	if (n < 0) {
-		goto out;
-	}
+  if (n < 0) {
+    goto out;
+  }
 
 out:
-	return NULL;
+  return NULL;
 }
 
 static void tun_read_handler(int flags, void *arg)
 {
-	struct tunif *tun = arg;
-	(void)flags;
+  struct tunif *tun = arg;
+  (void)flags;
   ssize_t n;
 
-	struct mbuf *mb = mbuf_alloc(EVER_OUTWARD_MBE_LENGTH*2);
+  struct mbuf *mb = mbuf_alloc(EVER_OUTWARD_MBE_LENGTH*2);
 
-	if (!mb)
-		return;
+  if (!mb)
+    return;
 
-	n = read( tun->fd
-			, mb->buf + EVER_OUTWARD_MBE_POS
-			, mb->size - EVER_OUTWARD_MBE_POS
-			);
-	if (n < 0) {
-		goto out;
-	}
+  n = read( tun->fd
+      , mb->buf + EVER_OUTWARD_MBE_POS
+      , mb->size - EVER_OUTWARD_MBE_POS
+      );
+  if (n < 0) {
+    goto out;
+  }
 
-	mb->pos = EVER_OUTWARD_MBE_POS;
-	mb->end = n + EVER_OUTWARD_MBE_POS;
+  mb->pos = EVER_OUTWARD_MBE_POS;
+  mb->end = n + EVER_OUTWARD_MBE_POS;
 
-	(void)mbuf_resize(mb, mb->end);
+  (void)mbuf_resize(mb, mb->end);
 
-	if (mbuf_get_left(mb) < 4) {
-		goto out;
-	}
+  if (mbuf_get_left(mb) < 4) {
+    goto out;
+  }
 
-	uint16_t af_be = ((uint16_t*)(void *)mbuf_buf(mb))[1];
-	if (af_be != 7680) {
-		/* only handle ipv6 */
-		goto out;
-	}
-    ((uint16_t*)(void *)mbuf_buf(mb))[0] = 0;
-    ((uint16_t*)(void *)mbuf_buf(mb))[1] = arch_htobe16(0x86DD);
+  uint16_t af_be = ((uint16_t*)(void *)mbuf_buf(mb))[1];
+  if (af_be != 7680) {
+    /* only handle ipv6 */
+    goto out;
+  }
 
-    csock_forward(&tun->tmldogma_cs, mb);
+  ((uint16_t*)(void *)mbuf_buf(mb))[0] = 0;
+  ((uint16_t*)(void *)mbuf_buf(mb))[1] = arch_htobe16(0x86DD);
 
- out:
-	mem_deref(mb);
+  csock_forward(&tun->tmldogma_cs, mb);
+
+out:
+  mem_deref(mb);
 
 }
 
 static void tunif_destructor(void *data)
 {
-	struct tunif *tun = data;
-	if (tun->fd > 0) {
-		fd_close(tun->fd);
-		(void)close(tun->fd);
-	}
+  struct tunif *tun = data;
+  if (tun->fd > 0) {
+    fd_close(tun->fd);
+    (void)close(tun->fd);
+  }
 }
 
 int tunif_init( struct tunif **tunifp )
 {
-	int err = 0;
+  int err = 0;
 
-	struct tunif *tunif;
+  struct tunif *tunif;
 
-	if (!tunifp)
-		return EINVAL;
+  if (!tunifp)
+    return EINVAL;
 
-	tunif = mem_zalloc(sizeof(*tunif), tunif_destructor);
-	if (!tunif) {
-	    tunif = mem_deref(tunif);
-		return ENOMEM;
-	}
+  tunif = mem_zalloc(sizeof(*tunif), tunif_destructor);
+  if (!tunif) {
+      tunif = mem_deref(tunif);
+    return ENOMEM;
+  }
 
     tunif->fd = socket(PF_SYSTEM, SOCK_DGRAM, SYSPROTO_CONTROL);
     if (tunif->fd < 0) {
@@ -171,40 +172,40 @@ int tunif_init( struct tunif **tunifp )
     uint32_t name_len = TUN_IFNAMSIZ;
 
     if (getsockopt( tunif->fd
-    			  , SYSPROTO_CONTROL
-    			  , UTUN_OPT_IFNAME
-    			  , tunif->name
-    			  , (uint32_t*)&name_len)) {
-	    err = errno;
-	    goto err;
-	}
+            , SYSPROTO_CONTROL
+            , UTUN_OPT_IFNAME
+            , tunif->name
+            , (uint32_t*)&name_len)) {
+      err = errno;
+      goto err;
+  }
 
-	net_sockopt_blocking_set(tunif->fd, false);
+  net_sockopt_blocking_set(tunif->fd, false);
 
-	err = fcntl(tunif->fd, F_SETFD, FD_CLOEXEC);
-	if (err) {
-		goto err;
-	}
+  err = fcntl(tunif->fd, F_SETFD, FD_CLOEXEC);
+  if (err) {
+    goto err;
+  }
 
     /*re_printf("Initialized utun interface [%s]\n", tunif->name);*/
 
     /* setup event handler */
-	err = fd_listen( tunif->fd
-		           , FD_READ
-		           , tun_read_handler
-		           , tunif);
-	if (err) {
+  err = fd_listen( tunif->fd
+               , FD_READ
+               , tun_read_handler
+               , tunif);
+  if (err) {
         goto err;
-	}
+  }
 
-	tunif->tmldogma_cs.send = _from_terminaldogma;
+  tunif->tmldogma_cs.send = _from_terminaldogma;
 
     *tunifp = tunif;
 
     return err;
 
 err:
-	tunif = mem_deref(tunif);
-	return err;
+  tunif = mem_deref(tunif);
+  return err;
 
 }
