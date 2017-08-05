@@ -51,8 +51,6 @@ static int icmp6ChecksumTest(void)
   packet[42] = 0;
   packet[43] = 0;
 
-  re_printf("%W\n", &packet[40], 32);
-
   checksum_calc = chksum_ipv6(&packet[8], &packet[40], 32, arch_htobe32(58));
 
   ASSERT_TRUE(checksum == checksum_calc);
