@@ -147,9 +147,10 @@ endif
 LIBS_PRE := 
 
 ifneq ($(USEGENDO),)
-LIBS_PRE  += ../libgendo/libgendo.a
-LIB_OBJS+= ../libgendo/libgendo.a
-CFLAGS    += -I../libgendo/include
+LIBGENDO_SO := $(USEGENDO)
+LIBS_PRE  += $(LIBGENDO_SO)libgendo.a
+LIB_OBJS+= $(LIBGENDO_SO)libgendo.a
+CFLAGS    += -I$(USEGENDO)include
 CFLAGS += -DHAVE_GENDO
 endif
 
