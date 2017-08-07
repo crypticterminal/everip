@@ -133,16 +133,27 @@ int everip_init(void)
 
     info("tunnel device: %s init;\n", everip.tunif->name);
 
-    err = net_if_setaddr( everip.tunif->name
-                        , &tmp_sa
-                        , 8 );
+
+    for (int i = 0; i < 10; ++i) {
+      err = net_if_setaddr( everip.tunif->name
+                          , &tmp_sa
+                          , 8 );
+      if (!err) break;
+      sys_msleep(10);
+    }
+
     if (err) {
       error("everip_init: net_if_setaddr\n");
       return err;
     }
 
-    err = net_if_setmtu( everip.tunif->name
-                       , 1304);
+    for (int i = 0; i < 10; ++i) {
+      err = net_if_setmtu( everip.tunif->name
+                         , 1304);
+      if (!err) break;
+      sys_msleep(10);
+    }
+
     if (err) {
       error("everip_init: net_if_setmtu\n");
       return err;
