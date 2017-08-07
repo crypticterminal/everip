@@ -18,6 +18,8 @@
 #include <re.h>
 #include <everip.h>
 
+#include <sys/uio.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <net/if.h>
 #include <net/route.h>

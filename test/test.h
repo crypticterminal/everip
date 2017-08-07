@@ -156,6 +156,7 @@ int test_caengine(void);
 int test_treeoflife(void);
 int test_tun(void);
 int test_conduits(void);
+int test_checksum(void);
 
 #ifdef __cplusplus
 extern "C" {
