@@ -2,9 +2,9 @@
  * EVER/IP(R)
  * Copyright (c) 2017 kristopher tate & connectFree Corporation.
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- * This project may be licensed under the terms of the GNU AFFERO General
- * Public License version 3. Corporate and Academic licensing terms are also
- * available. Contact <licensing@connectfree.co.jp> for details.
+ * This project may be licensed under the terms of the ConnectFree Reference
+ * Source License (CF-RSL). Corporate and Academic licensing terms are also
+ * available. Please contact <licensing@connectfree.co.jp> for details.
  *
  * connectFree, the connectFree logo, and EVER/IP are registered trademarks
  * of connectFree Corporation in Japan and other countries. connectFree
