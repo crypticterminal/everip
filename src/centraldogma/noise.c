@@ -1024,29 +1024,19 @@ static bool noise_session_hs_step5_begin( struct noise_session *ns )
   ns->keypair_then = mem_deref(ns->keypair_then);
 
   if (new_keypair->its_my_plane) {
-    /* If we're the initiator, it means we've sent a handshake, and received
-     * a confirmation response, which means this new keypair can now be used. */
+    /* STATE 1A */
     if (ns->keypair_next) {
-      /* If there already was a next keypair pending, we demote it to be
-       * the previous keypair, and free the existing current.
-       * TODO: note that this means KCI can result in this transition. It
-       * would perhaps be more sound to always just get rid of the unused
-       * next keypair instead of putting it in the previous slot, but this
-       * might be a bit less robust. Something to think about and decide on. */
+      /* STATE 1A.1 */
       ns->keypair_then = ns->keypair_next;
       ns->keypair_next = NULL;
     } else {
-      /* If there wasn't an existing next keypair, we replace the
-       * previous with the current one. */
+      /* STATE 1A.2 */
       ns->keypair_then = ns->keypair_now;
       ns->keypair_now = NULL;
     }
     ns->keypair_now = new_keypair;
   } else {
-    /* If we're the responder, it means we can't use the new keypair until
-     * we receive confirmation via the first data packet, so we get rid of
-     * the existing previous one, the possibly existing next one, and slide
-     * in the new next one. */
+    /* STATE 1B */
     ns->keypair_next = mem_deref( ns->keypair_next );
     ns->keypair_next = new_keypair;
   }
