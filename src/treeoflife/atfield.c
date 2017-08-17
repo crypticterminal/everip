@@ -25,13 +25,13 @@ static void atfield_item_destructor(void *data)
 }
 
 static struct atfield_item * atfield_get( struct atfield *at
-                                        , uint8_t ip6[ADDR_SEARCH_TARGET_SIZE] )
+                                        , uint8_t ip6[EVERIP_ADDRESS_LENGTH] )
 {
   struct le *le;
   struct atfield_item *ati;
   LIST_FOREACH(&at->list, le) {
     ati = le->data;
-    if (!memcmp(ati->ip6.b, ip6, ADDR_SEARCH_TARGET_SIZE)) {
+    if (!memcmp(ati->ip6.b, ip6, EVERIP_ADDRESS_LENGTH)) {
       return ati;
     }
   }
@@ -58,7 +58,7 @@ static int atfield_wb_autoset( struct atfield *at )
 }
 
 int atfield_add( struct atfield *at
-               , uint8_t ip6[ADDR_SEARCH_TARGET_SIZE]
+               , uint8_t ip6[EVERIP_ADDRESS_LENGTH]
                , uint8_t mode )
 {
   struct atfield_item *ati;
@@ -74,7 +74,7 @@ int atfield_add( struct atfield *at
   if (!ati)
     return ENOMEM;
 
-  memcpy(&ati->ip6.b, ip6, ADDR_SEARCH_TARGET_SIZE);
+  memcpy(&ati->ip6.b, ip6, EVERIP_ADDRESS_LENGTH);
 
   ati->mode = mode;
   list_append(&at->list, &ati->le, ati);
@@ -85,13 +85,13 @@ int atfield_add( struct atfield *at
 }
 
 uint8_t atfield_check( struct atfield *at
-                     , uint8_t ip6[ADDR_SEARCH_TARGET_SIZE] )
+                     , uint8_t ip6[EVERIP_ADDRESS_LENGTH] )
 {
   struct le *le;
   struct atfield_item *ati;
   LIST_FOREACH(&at->list, le) {
     ati = le->data;
-    if (!memcmp(ati->ip6.b, ip6, ADDR_SEARCH_TARGET_SIZE)) {
+    if (!memcmp(ati->ip6.b, ip6, EVERIP_ADDRESS_LENGTH)) {
       if (at->white) {
         return ati->mode & ATFIELD_MODE_WHITE ? 1 : 0;
       } else {
@@ -103,7 +103,7 @@ uint8_t atfield_check( struct atfield *at
 }
 
 int atfield_remove( struct atfield *at
-                  , uint8_t ip6[ADDR_SEARCH_TARGET_SIZE] )
+                  , uint8_t ip6[EVERIP_ADDRESS_LENGTH] )
 {
   struct le *le;
   struct atfield_item *ati;
@@ -113,7 +113,7 @@ int atfield_remove( struct atfield *at
 
   LIST_FOREACH(&at->list, le) {
     ati = le->data;
-    if (!memcmp(ati->ip6.b, ip6, ADDR_SEARCH_TARGET_SIZE)) {
+    if (!memcmp(ati->ip6.b, ip6, EVERIP_ADDRESS_LENGTH)) {
       if (ati->mode & ATFIELD_MODE_LOCKL)
         return EINVAL;
       ati = mem_deref(ati);
@@ -155,7 +155,7 @@ int atfield_debug(struct re_printf *pf, const struct atfield *atfield)
       ati = le->data;
       err  = re_hprintf( pf
                , "  [%W%s%s%s]\n"
-               , ati->ip6.b, ADDR_SEARCH_TARGET_SIZE
+               , ati->ip6.b, EVERIP_ADDRESS_LENGTH
                , ati->mode & ATFIELD_MODE_BLACK ? " BLACK " : ""
                , ati->mode & ATFIELD_MODE_WHITE ? " WHITE " : ""
                , ati->mode & ATFIELD_MODE_LOCKL ? " LOCKED " : "");

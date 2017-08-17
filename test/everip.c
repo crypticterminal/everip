@@ -20,13 +20,23 @@
 #include <string.h>
 #include "test.h"
 
-int test_conduits(void)
+#define PRIVATEKEY "355dd5874b2f0cbd45bb82c7ed61ebb1f0f9f8ca0b287efe0951cd11635aac37"
+
+int test_everip(void)
 {
   int err = 0;
-  /* for code coverage */
-  module_preload("udp");
-  /*root only*/
-  //module_preload("eth");
+  uint8_t prv[NOISE_PUBLIC_KEY_LEN];
+
+  warning("NOTICE: It is okay if the tunnel fails for this test;\n");
+
+  str_hex(prv, 32, PRIVATEKEY);
+
+  err = everip_init(prv, 1988);
+  TEST_ERR(err);
+
+  everip_close();
+
   mod_close();
+out:
   return err;
 }

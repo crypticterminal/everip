@@ -1,6 +1,6 @@
 
 PROJECT	  := everip
-VERSION   := 0.1.2
+VERSION   := 0.1.0
 DESCR     := "The EVER/IP(R) Suite"
 
 # Verbose and silent build modes
@@ -23,6 +23,14 @@ ifndef LIBSODIUM_PATH
 LIBSODIUM_PATH	:= $(shell [ -d ../libs ] && echo "../libs")
 endif
 
+ifndef LIBUTP_PATH
+LIBUTP_PATH	:= $(shell [ -d ../libutp ] && echo "../libutp")
+endif
+
+ifndef LIBUTP_SO
+LIBUTP_SO	:= $(shell [ -f $(LIBUTP_PATH)/libutp.a ] && echo "$(LIBUTP_PATH)")
+endif
+
 GIT_VERSION = $(shell git describe --dirty --abbrev=20 --always)
 CFLAGS    += -DGITVERSION="\"$(GIT_VERSION)\""
 
@@ -35,6 +43,11 @@ CXXFLAGS  += $(EXTRA_CXXFLAGS)
 
 # XXX: common for C/C++
 CPPFLAGS += -DHAVE_INTTYPES_H
+
+ifneq ($(LIBSODIUM_PATH),)
+SPLINT_OPTIONS += -I$(LIBSODIUM_PATH)/include
+CLANG_OPTIONS  += -I$(LIBSODIUM_PATH)/include
+endif
 
 ifneq ($(LIBSODIUM_PATH),)
 SPLINT_OPTIONS += -I$(LIBSODIUM_PATH)/include
@@ -143,6 +156,10 @@ ifeq ($(LIBSODIUM_PATH),)
 	@echo "ERROR: Missing header files for libsodium. Check LIBSODIUM_PATH"
 	@exit 2
 endif
+ifeq ($(LIBUTP_PATH),)
+	@echo "ERROR: Missing header files for libutp. Check LIBUTP_PATH"
+	@exit 2
+endif
 
 LIBS_PRE := 
 
@@ -155,6 +172,8 @@ CFLAGS += -DHAVE_GENDO
 endif
 
 LIB_OBJS += $(LIBSODIUM_PATH)/lib/libsodium.a
+
+LIBS_PRE += $(LIBUTP_SO)/libutp.a
 
 Makefile:	mk/*.mk $(MOD_MK) $(LIBRE_MK)
 

@@ -64,6 +64,9 @@ static const struct cmd cmdv[] = {
 int main(int argc, char *argv[])
 {
   int err;
+  uint8_t secret_key[32];
+  uint16_t port_default = 1988;
+
   (void)re_fprintf( stderr
           , "\nStarting connectFree(R) EVER/IP(R) for %s/%s [%s]\n"
             "Copyright 2016-2017 Kristopher Tate and connectFree Corporation.\n"
@@ -78,7 +81,7 @@ int main(int argc, char *argv[])
 
   (void)re_fprintf(stderr, "\n");
 
-#if !defined(WIN32) && !defined(CYGWIN)
+#if 0 && !defined(WIN32) && !defined(CYGWIN)
   if(getuid() != 0 || geteuid() != 0) {
     error( "EVER/IP(R) requires you to be a super user on %s/%s.\n"
          , sys_os_get(), sys_arch_get());
@@ -95,7 +98,7 @@ int main(int argc, char *argv[])
 
 #ifdef HAVE_GETOPT
   for (;;) {
-    const int c = getopt(argc, argv, GENDO_OPTIONS_STR "v");
+    const int c = getopt(argc, argv, GENDO_OPTIONS_STR "vk:U:");
     if (0 > c)
       break;
 
@@ -106,6 +109,15 @@ int main(int argc, char *argv[])
       case 'v':
         log_enable_debug(true);
         break;
+
+      case 'k': /* key */
+        str_hex(secret_key, 32, optarg);
+        break;
+
+      case 'U': /* udp port */
+        port_default = atoi(optarg);
+        break;
+
       default:
         break;
     }
@@ -115,7 +127,7 @@ int main(int argc, char *argv[])
   (void)argv;
 #endif
 
-  err = everip_init();
+  err = everip_init( secret_key, port_default );
   if (err) {
     warning("main: core init failed (%m)\n", err);
     goto out;

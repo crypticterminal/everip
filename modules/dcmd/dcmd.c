@@ -25,57 +25,54 @@ static time_t start_time;
 
 static int cmd_net_debug(struct re_printf *pf, void *unused)
 {
-	(void)unused;
-	return net_debug(pf, everip_network());
+  (void)unused;
+  return net_debug(pf, everip_network());
 }
 
 static int menu_legal(struct re_printf *pf, void *unused)
 {
-	(void)unused;
-	int err = 0;
+  (void)unused;
+  int err = 0;
 
-#if SIGNED_CLA_LICENSE
-	bool show_instructions = false;
-#endif
+  bool show_instructions = false;
 
-	err |= re_hprintf(pf, "\n[Legal Information]\n");
+  err |= re_hprintf(pf, "\n[Legal Information]\n");
 
-	err |= re_hprintf(pf,
-					  "\n\nconnectFree(R) EVER/IP(R) for %s/%s [%s]\n"
-					  "Copyright 2013-2017 Kristopher Tate and connectFree Corporation.\n"
-					  "All Rights Reserved. Protected by International Patent Treaties.\n"
-					, sys_os_get(), sys_arch_get()
-					, EVERIP_VERSION
-					);
+  err |= re_hprintf(pf,
+            "\n\nconnectFree(R) EVER/IP(R) for %s/%s [%s]\n"
+            "Copyright 2013-2017 Kristopher Tate and connectFree Corporation.\n"
+            "All Rights Reserved. Protected by International Patent Treaties.\n"
+          , sys_os_get(), sys_arch_get()
+          , EVERIP_VERSION
+          );
 
-#if SIGNED_CLA_LICENSE
-	err |= re_hprintf(pf, "\n---[THIS SOFTWARE IS LICENSED UNDER CLA/ODA]---\n");
+//err |= re_hprintf(pf, "\n---[THIS SOFTWARE IS LICENSED UNDER CLA/ODA]---\n");
 
 err |= re_hprintf( pf
-				 , "\n\nCONNECTFREE(R) EVER/IP(R) END USER LICENSE AGREEMENT\n"
+         , "\n\nCONNECTFREE(R) EVER/IP(R) END USER LICENSE AGREEMENT\n"
 "\n"
 "PLEASE READ THE TERMS OF THIS SOFTWARE LICENSE AGREEMENT (\"AGREEMENT\")\n"
 "GOVERNING THE USE OF THE SOFTWARE AND RELATED DOCUMENTATION\n"
 "(AS FURTHER DEFINED BELOW) CAREFULLY BEFORE USING THE SOFTWARE.\n"
 "\n");
 err |= re_hprintf( pf
-				 , "    1.  Introduction and Acceptance.  This Agreement is a legal agreement\n"
+         , "    1.  Introduction and Acceptance.  This Agreement is a legal agreement\n"
 "between you (either an individual or an entity) (“YOU” or “YOUR”) and\n"
 "connectFree Corporation (“connectFree”) regarding the use of connectFree’s\n"
 "software known as EVER/IP(R), which includes user documentation provided in\n"
 "electronic form (together, the \"connectFree Software\").\n"
 "\n");
 if (show_instructions) {
-	err |= re_hprintf( pf
-					 , "\nCAREFULLY READ THE TERMS AND CONDITIONS OF THIS AGREEMENT.\n"
-	"BY SELECTING THE \"YES\" BUTTON, YOU ARE AGREEING TO BE BOUND BY AND\n"
-	"ARE BECOMING A PARTY TO THIS AGREEMENT. IF YOU DO NOT AGREE TO ALL OF THE\n"
-	"TERMS OF THIS AGREEMENT, SELECT THE \"NO\" BUTTON AND THE SOFTWARE WILL NOT\n"
-	"BE DOWNLOADED OR INSTALLED ON YOUR COMPUTER.\n\n"
-	"\n");
+  err |= re_hprintf( pf
+           , "\nCAREFULLY READ THE TERMS AND CONDITIONS OF THIS AGREEMENT.\n"
+  "BY SELECTING THE \"YES\" BUTTON, YOU ARE AGREEING TO BE BOUND BY AND\n"
+  "ARE BECOMING A PARTY TO THIS AGREEMENT. IF YOU DO NOT AGREE TO ALL OF THE\n"
+  "TERMS OF THIS AGREEMENT, SELECT THE \"NO\" BUTTON AND THE SOFTWARE WILL NOT\n"
+  "BE DOWNLOADED OR INSTALLED ON YOUR COMPUTER.\n\n"
+  "\n");
 }
 err |= re_hprintf( pf
-				 , "    2.  License Grant.  Subject to the restrictions set forth below, this\n"
+         , "    2.  License Grant.  Subject to the restrictions set forth below, this\n"
 "Agreement grants You a non-exclusive, royalty-free, perpetual license to\n"
 "download, install and use one (1) copy of the specified version of connectFree\n"
 "Software in object code format, for internal purposes only.  You may\n"
@@ -91,7 +88,7 @@ err |= re_hprintf( pf
 "obligation to do so.\n"
 "\n");
 err |= re_hprintf( pf
-				 , "    3.  Ownership.  The license granted to You hereunder does not\n"
+         , "    3.  Ownership.  The license granted to You hereunder does not\n"
 "constitute a transfer or sale of connectFree’s ownership rights in or to\n"
 "connectFree Software.  Except for the license rights granted above, all right,\n"
 "title and interest, including all Intellectual Property Rights, in and to\n"
@@ -106,7 +103,7 @@ err |= re_hprintf( pf
 "You.\n"
 "\n");
 err |= re_hprintf( pf
-				 , "    4.  License Restrictions.  YOU MAY NOT RENT, LEASE, SUBLICENSE, SELL,\n"
+         , "    4.  License Restrictions.  YOU MAY NOT RENT, LEASE, SUBLICENSE, SELL,\n"
 "ASSIGN, LOAN OR OTHERWISE TRANSFER CONNECTFREE SOFTWARE OR ANY OF YOUR RIGHTS\n"
 "AND OBLIGATIONS HEREUNDER.  You may not reverse engineer, decompile, or\n"
 "disassemble connectFree Software or attempt to circumvent any technical\n"
@@ -120,7 +117,7 @@ err |= re_hprintf( pf
 "third parties (through the Internet or otherwise).\n"
 "\n");
 err |= re_hprintf( pf
-				 , "    5.  Confidentiality.  You shall hold in the strictest confidence\n"
+         , "    5.  Confidentiality.  You shall hold in the strictest confidence\n"
 "connectFree Software and any related materials or information including, but\n"
 "not limited to, any technical data, research, product plans or know-how\n"
 "provided by connectFree to You, either directly or indirectly in writing,\n"
@@ -134,7 +131,7 @@ err |= re_hprintf( pf
 "Information.\n"
 "\n");
 err |= re_hprintf( pf
-				 , "    6.  Termination.  This Agreement shall be effective upon installation\n"
+         , "    6.  Termination.  This Agreement shall be effective upon installation\n"
 "of connectFree Software and SHALL TERMINATE UPON THE EARLIER OF: (I) YOUR\n"
 "FAILURE TO COMPLY WITH ANY TERM OF THIS AGREEMENT; OR (II) DESTRUCTION OR\n"
 "DELETION OF ALL COPIES OF CONNECTFREE SOFTWARE IN YOUR POSSESSION.\n"
@@ -146,7 +143,7 @@ err |= re_hprintf( pf
 "devices.\n"
 "\n");
 err |= re_hprintf( pf
-				 , "    7.  NO WARRANTIES.  TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW,\n"
+         , "    7.  NO WARRANTIES.  TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW,\n"
 "CONNECTFREE AND ITS LICENSORS PROVIDE THE SOFTWARE \"AS IS\" AND WITHOUT\n"
 "WARRANTY OF ANY KIND AND EXPRESSLY DISCLAIMS WITH RESPECT TO THE SOFTWARE\n"
 "ALL WARRANTIES AND CONDITIONS, WHETHER EXPRESS, IMPLIED, OR STATUTORY,\n"
@@ -160,7 +157,7 @@ err |= re_hprintf( pf
 "OTHER DEVICE, OR LOSS OF DATA THAT RESULTS FROM YOUR USE OF THE SOFTWARE.\n"
 "\n");
 err |= re_hprintf( pf
-				 , "    8.  LIMITATION OF LIABILITY. UNDER NO CIRCUMSTANCES WILL CONNECTFREE BE\n"
+         , "    8.  LIMITATION OF LIABILITY. UNDER NO CIRCUMSTANCES WILL CONNECTFREE BE\n"
 "LIABLE FOR ANY CONSEQUENTIAL, SPECIAL, INDIRECT, INCIDENTAL OR PUNITIVE\n"
 "DAMAGES WHATSOEVER (INCLUDING, WITHOUT LIMITATION, DAMAGES FOR LOSS OF\n"
 "BUSINESS PROFITS, BUSINESS INTERRUPTION, LOSS OF BUSINESS INFORMATION,\n"
@@ -172,7 +169,7 @@ err |= re_hprintf( pf
 "OR (2) ¥10000JPY.\n"
 "\n");
 err |= re_hprintf( pf
-				 , "    9.  INDEMNITY.  You agree to defend, indemnify and hold harmless\n"
+         , "    9.  INDEMNITY.  You agree to defend, indemnify and hold harmless\n"
 "connectFree, its officers, directors, employees, and agents, from and against\n"
 "any and all claims, damages, obligations, losses, liabilities, costs or\n"
 "debt, and expenses (including but not limited to attorney's fees) arising\n"
@@ -184,13 +181,13 @@ err |= re_hprintf( pf
 "Agreement and Your use of connectFree Software.\n"
 "\n");
 err |= re_hprintf( pf
-				 , "    10. Export Restrictions.  You may not export or re-export: (i) connectFree\n"
+         , "    10. Export Restrictions.  You may not export or re-export: (i) connectFree\n"
 "Software without the prior written consent of connectFree; and (ii) connectFree\n"
 "Software without complying with applicable export control laws and\n"
 "obtaining any necessary permits and licenses.\n"
 "\n");
 err |= re_hprintf( pf
-				 , "    12. Changes to the terms of this Agreement.  connectFree may make changes\n"
+         , "    12. Changes to the terms of this Agreement.  connectFree may make changes\n"
 "to this Agreement from time to time. When these changes are made, connectFree\n"
 "will make any new/additional terms available to You.  You understand and\n"
 "agree that if You use connectFree Software after the date on which terms have\n"
@@ -198,7 +195,7 @@ err |= re_hprintf( pf
 "terms.\n"
 "\n");
 err |= re_hprintf( pf
-				 , "    13. General.  This Agreement is governed by the laws of the nation state\n"
+         , "    13. General.  This Agreement is governed by the laws of the nation state\n"
 "of Japan, excluding its conflicts of laws principles.  You agree to the\n"
 "exclusive jurisdiction and venue of the prefecture and federal courts located\n"
 "in Kyoto-shi, Kyoto-fu, JAPAN.  If any provision of this Agreement is held by\n"
@@ -222,29 +219,27 @@ err |= re_hprintf( pf
 "product names without the express written consent of their respective owners.\n"
 "\n");
 err |= re_hprintf( pf
-				 , "    14. Questions.  Should You have any questions concerning this\n"
+         , "    14. Questions.  Should You have any questions concerning this\n"
 "Agreement, or if You desire to contact connectFree for any reason,\n"
 "please visit http://connectfree.co.jp/\n"
 "\n\n");
 if (show_instructions) {
-	err |= re_hprintf( pf
-					 , "BY SELECTING THE “YES” BUTTON BELOW, YOU ARE INDICATING THAT YOU HAVE READ\n"
-	"AND CONSENT TO BE BOUND BY THE TERMS OF THIS AGREEMENT.  IF YOU HAVE NOT\n"
-	"READ THIS AGREEMENT, OR YOU DO NOT AGREE TO BE LEGALLY BOUND BY ITS TERMS,\n"
-	"SELECT “NO” AND DO NOT USE THE SOFTWARE.\n\n"
-	);
+  err |= re_hprintf( pf
+           , "BY SELECTING THE “YES” BUTTON BELOW, YOU ARE INDICATING THAT YOU HAVE READ\n"
+  "AND CONSENT TO BE BOUND BY THE TERMS OF THIS AGREEMENT.  IF YOU HAVE NOT\n"
+  "READ THIS AGREEMENT, OR YOU DO NOT AGREE TO BE LEGALLY BOUND BY ITS TERMS,\n"
+  "SELECT “NO” AND DO NOT USE THE SOFTWARE.\n\n"
+  );
 }
 
-	err |= re_hprintf(pf, "\n\n--[END OF EULA]--\n\n");
+  err |= re_hprintf(pf, "\n\n--[END OF EULA]--\n\n");
 
-#endif
+  err |= re_hprintf(pf, "\n\nAcknowledgements:\n");
 
-	err |= re_hprintf(pf, "\n\nAcknowledgements:\n");
+  err |= re_hprintf(pf, "\nPortions of this ConnectFree Software may utilize the following\n"
+          "copyrighted material, the use of which is hereby acknowledged.\n");
 
-	err |= re_hprintf(pf, "\nPortions of this ConnectFree Software may utilize the following\n"
-					"copyrighted material, the use of which is hereby acknowledged.\n");
-
-	err |= re_hprintf(pf, "\n\nAlfred E. Heggestad (libre)\n"
+  err |= re_hprintf(pf, "\n\nAlfred E. Heggestad (libre)\n"
 "Copyright (c) 2010 - 2016, Alfred E. Heggestad\n"
 "Copyright (c) 2010 - 2016, Richard Aas\n"
 "Copyright (c) 2010 - 2016, Creytiv.com\n"
@@ -279,7 +274,7 @@ if (show_instructions) {
 "THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n"
 );
 
-	err |= re_hprintf(pf, "\n\nFrank Denis (libsodium)\n"
+  err |= re_hprintf(pf, "\n\nFrank Denis (libsodium)\n"
 "ISC License\n"
 "\n"
 "Copyright (c) 2013-2017\n"
@@ -299,165 +294,206 @@ if (show_instructions) {
 
 err |= re_hprintf(pf, "\n\n--[END]--\n\n");
 
-	return err;
+  return err;
 }
 
 static int print_system_info(struct re_printf *pf, void *arg)
 {
-	uint32_t uptime;
-	int err = 0;
+  uint32_t uptime;
+  int err = 0;
 
-	(void)arg;
+  (void)arg;
 
-	uptime = (uint32_t)((long long)(tmr_jiffies() - start_ticks)/1000);
+  uptime = (uint32_t)((long long)(tmr_jiffies() - start_ticks)/1000);
 
-	err |= re_hprintf(pf, "\n---[SYSTEM]---\n");
+  err |= re_hprintf(pf, "\n---[SYSTEM]---\n");
 
-	err |= re_hprintf(pf, " MACHINE:  %s/%s\n", sys_arch_get(),
-			  sys_os_get());
-	err |= re_hprintf(pf, " VERSION:  %s (cflib v%s)\n",
-			  EVERIP_VERSION, sys_libre_version_get());
-	err |= re_hprintf(pf, " BUILD:    %H\n", sys_build_get, NULL);
-	err |= re_hprintf(pf, " KERNEL:   %H\n", sys_kernel_get, NULL);
-	err |= re_hprintf(pf, " UPTIME:   %H\n", fmt_human_time, &uptime);
-	err |= re_hprintf(pf, " STARTED:  %s", ctime(&start_time));
+  err |= re_hprintf(pf, " MACHINE:  %s/%s\n", sys_arch_get(),
+        sys_os_get());
+  err |= re_hprintf(pf, " VERSION:  %s (cflib v%s)\n",
+        EVERIP_VERSION, sys_libre_version_get());
+  err |= re_hprintf(pf, " BUILD:    %H\n", sys_build_get, NULL);
+  err |= re_hprintf(pf, " KERNEL:   %H\n", sys_kernel_get, NULL);
+  err |= re_hprintf(pf, " UPTIME:   %H\n", fmt_human_time, &uptime);
+  err |= re_hprintf(pf, " STARTED:  %s", ctime(&start_time));
 
 #ifdef __VERSION__
-	err |= re_hprintf(pf, " COMPILER: %s\n", __VERSION__);
+  err |= re_hprintf(pf, " COMPILER: %s\n", __VERSION__);
 #endif
 
-	return err;
+  return err;
 }
 
 static int cmd_conduits_debug(struct re_printf *pf, void *unused)
 {
-	(void)unused;
-	return conduits_debug(pf, everip_conduits());
+  (void)unused;
+  return conduits_debug(pf, everip_conduits());
 }
 
 static int cmd_treeoflife_debug(struct re_printf *pf, void *unused)
 {
-	(void)unused;
-	return treeoflife_debug(pf, everip_treeoflife());
+  (void)unused;
+  return treeoflife_debug(pf, everip_treeoflife());
 }
 
 static int cmd_treeoflife_dht_debug(struct re_printf *pf, void *unused)
 {
-	(void)unused;
-	return treeoflife_dht_debug(pf, everip_treeoflife());
+  (void)unused;
+  return treeoflife_dht_debug(pf, everip_treeoflife());
 }
 
 static int cmd_caengine_debug(struct re_printf *pf, void *unused)
 {
-	(void)unused;
-	return caengine_debug(pf, everip_caengine());
+  (void)unused;
+  return caengine_debug(pf, everip_caengine());
 }
 
 static int cmd_atfield_debug(struct re_printf *pf, void *unused)
 {
-	(void)unused;
-	return atfield_debug(pf, everip_atfield());
+  (void)unused;
+  return atfield_debug(pf, everip_atfield());
 }
 
 static int cmd_atfield_action(struct re_printf *pf, void *arg)
 {
-	const struct cmd_arg *carg = arg;
-	int err = 0;
-	struct sa laddr;
+  const struct cmd_arg *carg = arg;
+  int err = 0;
+  struct sa laddr;
 
   if (sa_set_str(&laddr, carg->prm, 0)) {
-  	err = EINVAL;
-		err |= re_hprintf(pf, "error: %s is an invalid ipv6 address\n", carg->prm);
-		goto out;
-	}
+    err = EINVAL;
+    err |= re_hprintf(pf, "error: %s is an invalid ipv6 address\n", carg->prm);
+    goto out;
+  }
 
-	if (carg->complete) {
-		switch (carg->key) {
-			case '+': /* add to black */
-				atfield_add(everip_atfield(), (uint8_t *)&laddr.u.in6.sin6_addr, ATFIELD_MODE_BLACK);
-				err |= re_hprintf(pf, "%j was added to the black list\n", &laddr);
-				break;
-			case '*': /* add to white */
-				atfield_add(everip_atfield(), (uint8_t *)&laddr.u.in6.sin6_addr, ATFIELD_MODE_WHITE);
-				err |= re_hprintf(pf, "%j was added to the white list\n", &laddr);
-				break;
-			case '-': /* remove from white or black */
-				atfield_remove(everip_atfield(), (uint8_t *)&laddr.u.in6.sin6_addr);
-				break;
-			default:
-				err |= re_hprintf(pf, "?\n");
-				break;
-		}
-	}
+  if (carg->complete) {
+    switch (carg->key) {
+      case '+': /* add to black */
+        atfield_add(everip_atfield(), (uint8_t *)&laddr.u.in6.sin6_addr, ATFIELD_MODE_BLACK);
+        err |= re_hprintf(pf, "%j was added to the black list\n", &laddr);
+        break;
+      case '*': /* add to white */
+        atfield_add(everip_atfield(), (uint8_t *)&laddr.u.in6.sin6_addr, ATFIELD_MODE_WHITE);
+        err |= re_hprintf(pf, "%j was added to the white list\n", &laddr);
+        break;
+      case '-': /* remove from white or black */
+        atfield_remove(everip_atfield(), (uint8_t *)&laddr.u.in6.sin6_addr);
+        break;
+      default:
+        err |= re_hprintf(pf, "?\n");
+        break;
+    }
+  }
 
 out:
-	return err;
+  return err;
 }
 
 static int cmd_debug_action(struct re_printf *pf, void *arg)
 {
-	int err = 0;
-	const struct cmd_arg *carg = arg;
-	if (!str_casecmp(carg->prm, "on")) {
-		log_enable_debug(true);
-		err |= re_hprintf(pf, "Debug Log set to ON state\n");
-	} else if (!str_casecmp(carg->prm, "off")) {
-		log_enable_debug(false);
-		err |= re_hprintf(pf, "Debug Log set to OFF state\n");
-	} else {
-		err |= re_hprintf(pf, "invalid choice: \"dbg on\" or \"dbg off\"\n");
-	}
-	return err;
+  int err = 0;
+  const struct cmd_arg *carg = arg;
+  if (!str_casecmp(carg->prm, "on")) {
+    log_enable_debug(true);
+    err |= re_hprintf(pf, "Debug Log set to ON state\n");
+  } else if (!str_casecmp(carg->prm, "off")) {
+    log_enable_debug(false);
+    err |= re_hprintf(pf, "Debug Log set to OFF state\n");
+  } else {
+    err |= re_hprintf(pf, "invalid choice: \"dbg on\" or \"dbg off\"\n");
+  }
+  return err;
+}
+
+static int cmd_peer_add(struct re_printf *pf, void *arg)
+{
+  const struct cmd_arg *carg = arg;
+  int err = 0;
+  struct pl pl, pscheme, key, data;
+  struct conduit *conduit = NULL;
+  struct conduit_peer *peer;
+  struct magi_node *mnode;
+  char scheme[128];
+
+  pl_set_str(&pl, carg->prm);
+
+  if (0 != re_regex(pl.p, pl.l,
+        "[^:]+:[^@]+@[^]*",
+        &pscheme, &key, &data)) {
+    err |= re_hprintf(pf, "Invalid Peer Format\nCorrect format: conduit:key@HOST\n", carg->prm); 
+    goto out;
+  }
+
+  pl_strcpy(&pscheme, scheme, 128);
+
+  conduit = conduit_find_byname(everip_conduits(), scheme);
+
+  if (!conduit) {
+    err |= re_hprintf(pf, "CONDUIT [%s] could not be found\n", scheme); 
+    goto out;
+  }
+
+/*  mnode = magi_node_lookup_or_create( everip_magi()
+                                    , &key );
+  if (!mnode)
+    goto out;*/
+
+  err = conduit_peer_create(&peer, conduit, &key, &data, true);
+  if (err)
+    goto out;
+
+out:
+  return err;
 }
 
 static const struct cmd debugcmdv[] = {
-{"dbg", 0, 0, "Turn debug messages on/off", cmd_debug_action },
+  {"dbg", 0, 0, "Turn debug messages on/off", cmd_debug_action },
 
-{"main",     0,       0, "Main loop debug",          re_debug             },
-{"modules",  0,       0, "Loaded Module List",             mod_debug            },
-{"net", 	'n',      0, "Network Information",            cmd_net_debug        },
-{"sys", 	's',      0, "System Information",              print_system_info    },
-{"timers",   0,       0, "Timer debug",              tmr_status           },
-{"memstat", 'm',      0, "Memory status",            mem_status           },
-{"legal", 0,      0, "Legal Information",            menu_legal           },
-{"peers", 'p',      0, "Peers and Conduits",            cmd_conduits_debug },
-{"tree", 't',      0, "Routing Tree Information",            cmd_treeoflife_debug },
-{"dht", 'd',      0, "DHT Database",            cmd_treeoflife_dht_debug },
-{"crypto", 'c',      0, "Crypto-Authentication (CA) Engine",            cmd_caengine_debug },
+  {"main",     0,       0, "Main loop debug",          re_debug             },
+  {"modules",  0,       0, "Loaded Module List",             mod_debug            },
+  {"net",   'n',      0, "Network Information",            cmd_net_debug        },
+  {"sys",   0,      0, "System Information",              print_system_info    },
+  {"timers",   0,       0, "Timer debug",              tmr_status           },
+  {"memstat", 'm',      0, "Memory status",            mem_status           },
+  {"legal", 0,      0, "Legal Information",            menu_legal           },
+  {"conduits", 0,      0, "Conduits Information",            cmd_conduits_debug },
+  
+  //{"tree", 't',      0, "Routing Tree Information",            cmd_treeoflife_debug },
+  //{"dht", 'd',      0, "DHT Database",            cmd_treeoflife_dht_debug },
+  //{"crypto", 'c',      0, "Crypto-Authentication (CA) Engine",            cmd_caengine_debug },
 
-{"atfield", 'a', 0, "A.T. FIELD", cmd_atfield_debug },
-{"black", '+', CMD_PRM, "Add an EVER/IP Address to the Blacklist", cmd_atfield_action },
-{"white", '*', CMD_PRM, "Add an EVER/IP Address to the Whitelist", cmd_atfield_action },
-{"remove", '-', CMD_PRM, "Remove an EVER/IP Address from any White/Black list", cmd_atfield_action },
+  {"at", 'a', 0, "A.T. FIELD", cmd_atfield_debug },
+  {"at_bl", 0, CMD_PRM, "Add an EVER/IP Address to the Blacklist", cmd_atfield_action },
+  {"at_wh", 0, CMD_PRM, "Add an EVER/IP Address to the Whitelist", cmd_atfield_action },
+  {"at_rem", 0, CMD_PRM, "Remove an EVER/IP Address from any White/Black list", cmd_atfield_action },
 
+  {"add_peer", '+', CMD_PRM, "Add a peer", cmd_peer_add },
 };
-
 
 static int module_init(void)
 {
-	int err;
+  int err;
 
-	start_ticks = tmr_jiffies();
-	(void)time(&start_time);
+  start_ticks = tmr_jiffies();
+  (void)time(&start_time);
 
-	err = cmd_register(everip_commands(),
-			   debugcmdv, ARRAY_SIZE(debugcmdv));
+  err = cmd_register(everip_commands(),
+         debugcmdv, ARRAY_SIZE(debugcmdv));
 
-	return err;
+  return err;
 }
-
 
 static int module_close(void)
 {
-	cmd_unregister(everip_commands(), debugcmdv);
+  cmd_unregister(everip_commands(), debugcmdv);
 
-	return 0;
+  return 0;
 }
 
 
 const struct mod_export DECL_EXPORTS(dcmd) = {
-	"dcmd",
-	"app",
-	module_init,
-	module_close
+  "dcmd",
+  "app",
+  module_init,
+  module_close
 };

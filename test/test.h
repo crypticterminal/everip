@@ -155,8 +155,9 @@ int test_network(void);
 int test_caengine(void);
 int test_treeoflife(void);
 int test_tun(void);
-int test_conduits(void);
 int test_checksum(void);
+int test_noise(void);
+int test_everip(void);
 
 #ifdef __cplusplus
 extern "C" {

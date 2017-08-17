@@ -21,30 +21,6 @@
 
 #include <sodium.h>
 
-
-int csaddr_hash_udp(const struct sa *src, struct csock_addr *csaddr)
-{
-  memset(csaddr, 0, sizeof(struct csock_addr));
-
-  struct PACKONE {
-      uint16_t flags;
-      uint32_t hash;
-  } tmp;
-
-  tmp.flags = 0;
-  tmp.hash = sa_hash(src, SA_ALL);
-
-  csaddr->hash = hash_joaat((uint8_t *)&tmp, 6);
-  csaddr->len = CSOCK_ADDR_LENTOP + src->len;
-  csaddr->flags = tmp.flags;
-
-  sa_cpy(&csaddr->a.sa, src);
-
-  debug("csaddr_hash_udp\n");
-
-  return 0;
-}
-
 int addr_base32_decode(uint8_t* out
                       , const uint32_t olen
                       , const uint8_t* in
@@ -142,7 +118,7 @@ int addr_base32_encode( uint8_t* out
 }
 
 
-#define ADDR_SIZE (8 + ADDR_SEARCH_TARGET_SIZE + ADDR_KEY_SIZE + ADDR_NETWORK_ADDR_SIZE)
+#define ADDR_SIZE (8 + EVERIP_ADDRESS_LENGTH + ADDR_KEY_SIZE + ADDR_NETWORK_ADDR_SIZE)
 ASSERT_COMPILETIME(sizeof(struct addr) == ADDR_SIZE);
 
 int addr_calc_isvalid(const uint8_t address[16])

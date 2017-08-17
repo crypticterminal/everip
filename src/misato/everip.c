@@ -25,173 +25,358 @@
 #endif
 
 static struct everip {
-    /* ritsuko */
-    struct network *net;
-    struct commands *commands;
 
-    /* geofront */
-    struct conduits *conduits;
+  uint8_t myaddr[EVERIP_ADDRESS_LENGTH];
 
-    /* central dogma */
-    struct caengine *caengine;
+  /* ritsuko */
+  struct network *net;
+  struct commands *commands;
 
-    /* terminal dogma */
-    struct tmldogma *tmldogma;
-    struct tunif *tunif;
+  /* terminal dogma */
+  struct tunif *tunif;
 
-    struct netevent *netevent;
+  struct netevent *netevent;
 
-    /* treeoflife */
-    struct atfield *atfield;
-    struct treeoflife *treeoflife;
+  struct noise_engine *noise;
+  struct conduits *conduits;
 
-    uint16_t udp_port;
+  /* treeoflife */
+  struct atfield *atfield;
 
-    char *license_filename;
+  struct ledbat *ledbat;
+  struct magi *magi;
+
+  uint16_t udp_port;
+
+  struct csock cs_tunnel;
+  struct csock cs_conduits;
 
 } everip;
 
-int everip_init(void)
+static uint64_t ledbat_callback_h(ledbat_callback_arguments *a, void *arg)
 {
-    int err;
+  (void)arg;
+  struct mbuf *mb = NULL;
+  uint8_t *everip_addr = NULL;
+  struct magi_node *mnode = NULL;
+  struct conduit_peer *cp_selected = NULL;
 
-    memset(&everip, 0, sizeof(struct everip));
+  debug("everip: ledbat_callback_h\n");
 
-    if (sodium_init() == -1) {
-        return EINVAL;
+  if (a->callback_type == LEDBAT_SENDTO) {
+    /* check to make sure that it is AF_INET6 */
+    everip_addr = (uint8_t *)(void *)&((struct sockaddr_in6 *)(void *)a->u1.address)->sin6_addr;
+    debug( "everip: sendto: %zd byte packet to %W\n"
+         , a->len
+         , everip_addr, EVERIP_ADDRESS_LENGTH );
+
+    cp_selected = conduits_conduit_peer_search( everip.conduits
+                                              , everip_addr );
+    if (!cp_selected) {
+      debug("ledbat_callback_h: peer not found yet\n");
+      return 0;
     }
 
-    /* Initialise Network */
-    err = net_alloc(&everip.net);
-    if (err) {
-        return err;
+    mb = mbuf_alloc(EVER_OUTWARD_MBE_POS + a->len);
+    if (!mb)
+      return 0;
+
+    mb->pos = EVER_OUTWARD_MBE_POS;
+    mb->end = EVER_OUTWARD_MBE_POS + 2 + a->len;
+
+    mbuf_write_u16(mb, arch_htobe16( TYPE_BASE ));
+    mbuf_write_mem(mb, a->buf, a->len);
+
+    mbuf_set_pos(mb, EVER_OUTWARD_MBE_POS);
+  
+    conduit_peer_encrypted_send( cp_selected
+                               , mb );
+
+    mb = mem_deref( mb );
+
+  } else if (a->callback_type == LEDBAT_ON_ACCEPT) {
+    /* accept! */
+    everip_addr = (uint8_t *)(void *)&((struct sockaddr_in6 *)(void *)a->u1.address)->sin6_addr;
+    mnode = magi_node_lookup_by_eipaddr( everip.magi
+                                       , everip_addr );
+    if (!mnode) {
+      error("everip: hmm, no magi record!\n");
+      return 0;
     }
 
-    err = cmd_init(&everip.commands);
-    if (err)
-        return err;
+    magi_node_ledbat_sock_set(mnode, a->socket);
+    ledbat_sock_userdata_set(a->socket, mnode );
 
-    err = caengine_init(&everip.caengine);
-    if (err)
-        return err;
+  } else if (a->callback_type == LEDBAT_ON_ERROR) {
+    /* terminate! */
+    mnode = ledbat_sock_userdata_get( a->socket );
+    if (a->u1.error_code == LEDBAT_ECONNRESET) {
+      /* simply reconnect! */
+      ledbat_sock_reconnect( a->socket );
+    } else {
+      magi_node_ledbat_sock_set(mnode, NULL);
+    }
+  }
 
-#if defined(HAVE_GENDO)
-    GENDO_INIT;
-#endif
+  return 0 ;
+}
 
-    if (!everip.caengine->activated) {
-        error("CAE: could not be activated...\n");
-        err = EBADMSG;
-        return err;
+static struct csock *_from_tun( struct csock *csock
+                              , enum CSOCK_TYPE type
+                              , void *data )
+{
+  uint16_t next_header;
+  struct mbuf *mb = data;
+  struct conduit_peer *cp_selected = NULL;
+
+  if (!csock || type != CSOCK_TYPE_DATA_MB || !mb)
+    return NULL;
+
+  mbuf_advance(mb, 4);
+
+  struct _wire_ipv6_header *ihdr = \
+      (struct _wire_ipv6_header *)mbuf_buf(mb);
+
+  if (ihdr->dst[0] != 0xFC) {
+    return NULL; /* toss */
+  }
+
+  next_header = ihdr->next_header;
+
+  cp_selected = conduits_conduit_peer_search( everip.conduits
+                                            , ihdr->dst );
+  if (!cp_selected) {
+    debug("_from_tun: peer not found yet\n");
+    return NULL;
+  }
+
+  mbuf_advance(mb, WIRE_IPV6_HEADER_LENGTH);
+  mbuf_advance(mb, -2);
+  mbuf_write_u16(mb, arch_htobe16(next_header));
+  mbuf_advance(mb, -2);
+
+  conduit_peer_encrypted_send( cp_selected
+                             , mb );
+
+  return NULL;
+}
+
+static struct csock *_from_conduits( struct csock *csock
+                                   , enum CSOCK_TYPE type
+                                   , void *data )
+{
+  uint16_t next_header;
+  struct conduit_data *cdata = data;
+
+  if (!csock || type != CSOCK_TYPE_DATA_CONDUIT || !cdata)
+    return NULL;
+
+  debug("everip: _from_conduits\n");
+
+  if (mbuf_get_left(cdata->mb) < 2)
+    return NULL;
+
+  next_header = arch_betoh16(mbuf_read_u16(cdata->mb));
+
+  if (next_header < TYPE_BASE) {
+    /* IPv6 */
+
+    mbuf_advance(cdata->mb, -(WIRE_IPV6_HEADER_LENGTH));
+
+    struct _wire_ipv6_header *ihdr = \
+          (struct _wire_ipv6_header *)mbuf_buf(cdata->mb);
+
+    memset(ihdr, 0, WIRE_IPV6_HEADER_LENGTH - 32);
+
+    ((uint8_t*)ihdr)[0] |= (6) << 4;
+    ihdr->hop = 42;
+    ihdr->next_header = next_header;
+    ihdr->payload_be = arch_htobe16(mbuf_get_left(cdata->mb) - WIRE_IPV6_HEADER_LENGTH);
+
+    memcpy(ihdr->src, cdata->cp->everip_addr, EVERIP_ADDRESS_LENGTH);
+    memcpy(ihdr->dst, everip.myaddr, EVERIP_ADDRESS_LENGTH);
+
+    if (!atfield_check(everip_atfield(), ihdr->src)) {
+      return NULL;
     }
 
-    caengine_authtoken_add(everip.caengine, "EVERIP", "DEFAULT" );
+    mbuf_advance(cdata->mb, -4);
+    ((uint16_t*)(void *)mbuf_buf(cdata->mb))[0] = 0;
+    ((uint16_t*)(void *)mbuf_buf(cdata->mb))[1] = arch_htobe16(0x86DD);
 
-    if (!everip.udp_port)
-        everip.udp_port = 1988;
+    csock_forward(&everip.cs_tunnel, CSOCK_TYPE_DATA_MB, cdata->mb);
+  } else {
+    /* later check return value... */
+    ledbat_process_incoming( everip_ledbat()
+                           , cdata->cp->everip_addr
+                           , cdata->mb );
+  }
 
-    /* atfield */
-    err = atfield_init( &everip.atfield );
-    if (err) {
-      error("everip_init: atfield_init\n");
-      return err;
-    }
+  return NULL;
 
-    /* tree of life */
-    err = treeoflife_init( &everip.treeoflife
-                         , everip.caengine->my_ipv6+1 );
-    if (err) {
-      error("everip_init: treeoflife_init\n");
-      return err;
-    }
+}
 
-    err = conduits_init( &everip.conduits
-                       , everip.treeoflife );
-    if (err) {
-      error("everip_init: conduits_init\n");
-      return err;
-    }
+int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
+               , uint16_t port_default )
+{
+  int err;
+  struct sa laddr;
 
-    err = netevent_init( &everip.netevent );
-    if (err) {
-      error("everip_init: netevent_init\n");
-      return err;
-    }
+  memset(&everip, 0, sizeof(struct everip));
 
-    struct sa tmp_sa;
-    sa_init(&tmp_sa, AF_INET6);
-    sa_set_in6(&tmp_sa, everip.caengine->my_ipv6, 0);
+  if (sodium_init() == -1) {
+    return EINVAL;
+  }
 
-    info("UNLOCKING LICENSED EVER/IP(R) ADDRESS\n%j\n", &tmp_sa, 16);
+  /* Initialise Network */
+  err = net_alloc(&everip.net);
+  if (err) {
+    return err;
+  }
 
-#if 1
-    err = tunif_init( &everip.tunif );
-    if (err) {
-      error("everip_init: tunif_init\n");
-      return err;
-    }
+  err = cmd_init(&everip.commands);
+  if (err)
+    return err;
 
-    info("tunnel device: %s init;\n", everip.tunif->name);
+  err = magi_alloc( &everip.magi );
+  if (err) {
+    error("everip_init: magi_alloc\n");
+    return err;
+  }
 
+  err = ledbat_alloc( &everip.ledbat );
+  if (err) {
+    error("everip_init: ledbat_alloc\n");
+    return err;
+  }
+
+  err = ledbat_callback_register( everip.ledbat
+                                , ledbat_callback_h
+                                , NULL );
+  if (err) {
+    error("everip_init: ledbat_callback_register\n");
+    return err;
+  }
+
+  err = noise_engine_init( &everip.noise );
+  if (err) {
+    error("everip_init: noise_engine_init\n");
+    return err;
+  }
+
+  if (skey)
+    noise_si_private_key_set( &everip.noise->si, skey );
+
+  if (!addr_calc_pubkeyaddr( everip.myaddr, everip.noise->si.public )) {
+    error("everip_init: Invalid Identity\n");
+    return EINVAL;
+  }
+
+  sa_init(&laddr, AF_INET6);
+  sa_set_in6(&laddr, everip.myaddr, 0);
+
+  if (!everip.udp_port)
+      everip.udp_port = port_default ? port_default : 1988;
+
+  everip.cs_conduits.send = _from_conduits;
+  err = conduits_init( &everip.conduits, &everip.cs_conduits );
+  if (err) {
+    error("everip_init: conduits_init\n");
+    return err;
+  }
+
+  /* atfield */
+  err = atfield_init( &everip.atfield );
+  if (err) {
+    error("everip_init: atfield_init\n");
+    return err;
+  }
+
+  err = netevent_init( &everip.netevent );
+  if (err) {
+    error("everip_init: netevent_init\n");
+    return err;
+  }
+
+  info("UNLOCKING LICENSED EVER/IP(R) ADDRESS\n[%j]\n", &laddr, 16);
+
+  err = tunif_init( &everip.tunif );
+  if (err) {
+    error("everip_init: tunif_init\n");
+    err = 0;
+    goto skip_tun;
+  }
+
+  info("tunnel device: %s init;\n", everip.tunif->name);
+
+  for (int i = 0; i < 10; ++i) {
     err = net_if_setaddr( everip.tunif->name
-                        , &tmp_sa
+                        , &laddr
                         , 8 );
-    if (err) {
-      error("everip_init: net_if_setaddr\n");
-      return err;
-    }
+    if (!err) break;
+    sys_msleep(10);
+  }
 
+  if (err) {
+    error("everip_init: net_if_setaddr\n");
+    return err;
+  }
+
+  for (int i = 0; i < 10; ++i) {
     err = net_if_setmtu( everip.tunif->name
                        , 1304);
-    if (err) {
-      error("everip_init: net_if_setmtu\n");
-      return err;
-    }
+    if (!err) break;
+    sys_msleep(10);
+  }
 
-    conduits_connect_tunif(everip.conduits, &everip.tunif->tmldogma_cs);
-#endif
+  if (err) {
+    error("everip_init: net_if_setmtu\n");
+    return err;
+  }
+
+  everip.cs_tunnel.send = _from_tun;
+  csock_flow(&everip.cs_tunnel, &everip.tunif->cs_tmldogma);
+
+skip_tun:
 
 #if !defined(WIN32) && !defined(CYGWIN)
-    module_preload("stdio");
+  module_preload("stdio");
 #else
-    module_preload("wincon");
+  module_preload("wincon");
 #endif
-    module_preload("dcmd");
+  module_preload("dcmd");
 
-    /* wui: web ui*/
-    module_preload("wui");
+  /* wui: web ui*/
+  module_preload("wui");
 
-    /* conduits*/
-    module_preload("udp");
-    module_preload("eth");
+  /* conduits*/
+  module_preload("null");
+  module_preload("udp");
+  module_preload("eth");
 
-#if defined(HAVE_GENDO)
-    GENDO_MID;
-#endif
+  module_preload("treeoflife");
 
-    return 0;
+  return 0;
 }
 
 
 void everip_close(void)
 {
 
-#if defined(HAVE_GENDO)
-    GENDO_DEINIT;
-#endif
+    everip.magi = mem_deref( everip.magi );
+    everip.ledbat = mem_deref(everip.ledbat);
 
     everip.netevent = mem_deref(everip.netevent);
 
     /* reverse from init */
     everip.tunif = mem_deref(everip.tunif);
-    everip.conduits = mem_deref(everip.conduits);
-    everip.caengine = mem_deref(everip.caengine);
     everip.commands = mem_deref(everip.commands);
     everip.net = mem_deref(everip.net);
     everip.atfield = mem_deref(everip.atfield);
-    everip.treeoflife = mem_deref(everip.treeoflife);
 
-    everip.license_filename = mem_deref(everip.license_filename);
+    everip.conduits = mem_deref(everip.conduits);
+
+    everip.noise = mem_deref(everip.noise);
 }
 
 
@@ -200,14 +385,24 @@ struct network *everip_network(void)
     return everip.net;
 }
 
+struct magi *everip_magi(void)
+{
+    return everip.magi;
+}
+
+struct ledbat *everip_ledbat(void)
+{
+    return everip.ledbat;
+}
+
 struct commands *everip_commands(void)
 {
     return everip.commands;
 }
 
-struct caengine *everip_caengine(void)
+struct noise_engine *everip_noise(void)
 {
-    return everip.caengine;
+    return everip.noise;
 }
 
 struct conduits *everip_conduits(void)
@@ -218,11 +413,6 @@ struct conduits *everip_conduits(void)
 struct atfield *everip_atfield(void)
 {
     return everip.atfield;
-}
-
-struct treeoflife *everip_treeoflife(void)
-{
-    return everip.treeoflife;
 }
 
 void everip_udpport_set(uint16_t port)

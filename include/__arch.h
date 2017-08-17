@@ -116,17 +116,17 @@ static inline uint64_t reverse_b64(uint64_t i)
     #undef swap
 }
 
-#define arch_min(x, y) ({           \
+#define arch_min(x, y) (__extension__ ({           \
     __typeof__(x) _min1 = (x);          \
     __typeof__(y) _min2 = (y);          \
     (void) (&_min1 == &_min2);      \
-    _min1 < _min2 ? _min1 : _min2; })
+    _min1 < _min2 ? _min1 : _min2; }))
 
-#define arch_max(x, y) ({                \
+#define arch_max(x, y) (__extension__ ({                \
     __typeof__(x) _max1 = (x);          \
     __typeof__(y) _max2 = (y);          \
     (void) (&_max1 == &_max2);      \
-    _max1 > _max2 ? _max1 : _max2; })
+    _max1 > _max2 ? _max1 : _max2; }))
 
 static inline uint32_t chksum_one( const uint8_t *buf
                                  , uint16_t len
@@ -179,8 +179,8 @@ static inline uint16_t chksum_ipv6( const uint8_t * restrict addrs
 }
 
 enum {
-    BSZ   = 8,
-    BMASK = (BSZ - 1)
+  BSZ   = 8,
+  BMASK = (BSZ - 1)
 };
 
 static unsigned char BCMASK[] = {128, 64, 32, 16, 8, 4, 2, 1};

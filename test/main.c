@@ -56,10 +56,11 @@ static const struct test tests[] = {
 	,TEST(test_cmd_long)
 	,TEST(test_network)
 	//,TEST(test_tun) /* disabled because test containers do not support tuntap */
-	,TEST(test_conduits)
 	,TEST(test_treeoflife)
 	//,TEST(test_caengine)
 	,TEST(test_checksum)
+  ,TEST(test_noise)
+  ,TEST(test_everip)
 };
 
 
@@ -198,12 +199,6 @@ int main(int argc, char *argv[])
 	re_printf("running EVER/IP(R) selftest version %s with %zu tests\n",
 		  EVERIP_VERSION, ntests);
 
-#if 0
-	err = everip_init();
-	if (err)
-		goto out;
-#endif
-
 	if (argc >= (optind + 1)) {
 
 		for (i=0; i<ntests; i++) {
@@ -245,8 +240,6 @@ int main(int argc, char *argv[])
 	}
 
 	re_cancel();
-
-	everip_close();
 
 	libre_close();
 

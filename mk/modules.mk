@@ -1,6 +1,8 @@
 MODULES   += dcmd
+MODULES   += null
 MODULES   += udp
-MODULES   += eth
+MODULES   += treeoflife
+#MODULES   += eth
 
 #ui
 ifeq ($(OS),win32)

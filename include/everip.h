@@ -22,10 +22,11 @@
 extern "C" {
 #endif
 
+#include <sodium.h>
 #include "__arch.h"
 #include "__wires.h"
 
-#define EVERIP_VERSION "0.0.3"
+#define EVERIP_VERSION "0.1.0"
 
 #define EVERIP_VERSION_PROTOCOL 3
 
@@ -40,94 +41,26 @@ static inline bool everip_version_compat(uint32_t a, uint32_t b) {
 #define ZONE_COUNT 1
 #define ROUTE_LENGTH 16 /* 128 bytes */
 
-#define EVER_OUTWARD_MBE_POS (300)
+#define EVER_OUTWARD_MBE_POS (512)
 #define EVER_OUTWARD_MBE_LENGTH (1500)
 
-#define CAE_HEADER_LENGTH (120)
-#define CAE_HEADER_CHAL_LENGTH (12)
-
-#define CTRL_HEADER_LENGTH 4
-#define CTRL_HEADER_ERRLENGTH 4
-#define CTRL_HEADER_ERRLENGTHMIN (CTRL_HEADER_ERRLENGTH + RELAYMAP_HEADER_LENGTH + 4)
-#define CTRL_HEADER_ERRLENGTHMAX 256
-
-#define CTRL_ECODE_NONE                 0
-#define CTRL_ECODE_MALFORMED_ADDRESS    1
-#define CTRL_ECODE_FLOOD                2
-#define CTRL_ECODE_LINK_LIMIT_EXCEEDED  3
-#define CTRL_ECODE_OVERSIZE_MESSAGE     4
-#define CTRL_ECODE_UNDERSIZE_MESSAGE    5
-#define CTRL_ECODE_AUTHENTICATION       6
-#define CTRL_ECODE_INVALID              7
-#define CTRL_ECODE_UNDELIVERABLE        8
-#define CTRL_ECODE_LOOP_ROUTE           9
-#define CTRL_ECODE_RETURN_PATH_INVALID 10
-
-#define CTRL_TYPE_ERROR (2)
-#define CTRL_TYPE_ERROR_be arch_htobe16(CTRL_TYPE_ERROR)
-
-#define CTRL_TYPE_PING (3)
-#define CTRL_TYPE_PING_be arch_htobe16(CTRL_TYPE_PING)
-#define CTRL_TYPE_PINGKEY (5)
-#define CTRL_TYPE_PINGKEY_be arch_htobe16(CTRL_TYPE_PINGKEY)
-
-#define CTRL_TYPE_PONG (4)
-#define CTRL_TYPE_PONG_be arch_htobe16(CTRL_TYPE_PONG)
-#define CTRL_TYPE_PONGKEY (6)
-#define CTRL_TYPE_PONGKEY_be arch_htobe16(CTRL_TYPE_PONGKEY)
-
-/* bencode */
-
-enum bencode_typ {
-  BENCODE_STRING,
-  BENCODE_INT,
-  BENCODE_NULL,
-};
-
-struct bencode_value {
-  union {
-    struct pl pl;
-    int64_t integer;
-  } v;
-  enum bencode_typ type;
-};
-
-struct bencode_handlers;
-
-typedef int (bencode_object_entry_h)(const char *name,
-          const struct bencode_value *value, void *arg);
-typedef int (bencode_array_entry_h)(unsigned idx,
-         const struct bencode_value *value, void *arg);
-typedef int (bencode_object_h)(const char *name, unsigned idx,
-          struct bencode_handlers *h);
-typedef int (bencode_array_h)(const char *name, unsigned idx,
-         struct bencode_handlers *h);
-
-struct bencode_handlers {
-  bencode_object_h *oh;
-  bencode_array_h *ah;
-  bencode_object_entry_h *oeh;
-  bencode_array_entry_h *aeh;
-  void *arg;
-};
-
-int bencode_decode(const char *str, size_t len, unsigned maxdepth,
-    bencode_object_h *oh, bencode_array_h *ah,
-    bencode_object_entry_h *oeh, bencode_array_entry_h *aeh, void *arg);
-
-int bencode_decode_odict(struct odict **op, uint32_t hash_size, const char *str,
-          size_t len, unsigned maxdepth);
-int bencode_encode_odict(struct re_printf *pf, const struct odict *o);
+#define container_of(p, t, m) \
+    (__extension__ ({ \
+        const __typeof__(((t*)0)->m)*__mp = (p); \
+        (__mp ? (t*)((void*)(char*)__mp - offsetof(t, m)) : NULL); \
+    }))
 
 struct treeoflife;
+struct noise_session;
 
 /*
  * Address
  */
 
+#define EVERIP_ADDRESS_LENGTH 16
+
 #define ADDR_KEY_SIZE 32
 #define ADDR_NETWORK_ADDR_SIZE ROUTE_LENGTH
-#define ADDR_SEARCH_TARGET_SIZE 16
 #define ADDR_SERIALIZED_SIZE 40
 
 struct PACKONE addr
@@ -145,7 +78,7 @@ struct PACKONE addr
             uint64_t two_be;
             uint64_t one_be;
         } longs;
-        uint8_t bytes[ADDR_SEARCH_TARGET_SIZE];
+        uint8_t bytes[EVERIP_ADDRESS_LENGTH];
     } ip6;
     uint8_t key[ADDR_KEY_SIZE];
     uint8_t route[ROUTE_LENGTH];
@@ -161,202 +94,45 @@ int addr_base32_decode( uint8_t* out , const uint32_t olen , const uint8_t* in ,
 int addr_base32_encode( uint8_t* out , const uint32_t olen , const uint8_t* in , const uint32_t ilen );
 
 /*
- * Conduits
+ * CSOCK
  */
 
 struct csock;
 
-struct PACKONE mbuf_ext {
-  uint16_t c; /* content */
-  uint16_t h; /* header */
-  uint16_t e; /* entry */
-  uint16_t s; /* scratch start */
+enum CSOCK_TYPE {
+    CSOCK_TYPE_DATA_MB = 0
+  , CSOCK_TYPE_DATA_CONDUIT
+  , CSOCK_TYPE_NOISE_EVENT
 };
 
-/* outside address */
-
-#define csock_addr_cpycsa(mb, new_csaddr) \
-  { \
-  mbuf_set_pos(mb, 0); \
-  struct csock_addr *__csaddr = (struct csock_addr *)(void *)mbuf_buf( (mb) ); \
-  /*memset(csaddr, 0, sizeof(struct csock_addr));*/ \
-  /*debug("(new_csaddr)->len = %u|%u\n", (new_csaddr)->len, (new_csaddr)->a.sa.len);*/ \
-  memcpy(__csaddr, (new_csaddr), sizeof(struct csock_addr)); \
-  }
-
-struct csock_addr {
-  #define CSOCK_ADDR_LENTOP (4+2+2)
-  #define CSOCK_ADDR_LENMAC (CSOCK_ADDR_LENTOP+6)
-  uint32_t hash;
-  uint16_t len;
-    #define CSOCK_ADDR_BCAST  1
-    #define CSOCK_ADDR_MAC    (1<<1)
-    uint16_t flags;
-  union {
-    struct sa sa;
-    uint8_t mac[6];
-  } a;
-};
-
-int csaddr_hash_udp(const struct sa *src, struct csock_addr *csaddr);
-
-
-struct PACKONE rmap_wireheader
-{
-    uint8_t dst[ROUTE_LENGTH];
-    uint8_t src[ROUTE_LENGTH];
-    uint8_t cas;
-    uint8_t val;
-    uint16_t penalty_be;
-};
-#define RELAYMAP_HEADER_LENGTH (ROUTE_LENGTH+ROUTE_LENGTH+4)
-ASSERT_COMPILETIME(RELAYMAP_HEADER_LENGTH == sizeof(struct rmap_wireheader));
-
-static inline void _wireheader_setversion(struct rmap_wireheader *w, uint8_t v)
-{
-    ASSERT_TRUE(v < 4);
-    w->val = (v << 6) | (w->val & ((1<<(6))-1));
-}
-
-static inline void _wireheader_setshift(struct rmap_wireheader *w, uint32_t s)
-{
-    ASSERT_TRUE(s < 64);
-    w->val = w->val >> 6 << 6;
-    w->val |= s;
-}
-
-static inline uint32_t _wireheader_getshift(struct rmap_wireheader *w)
-{
-    return w->val & ((1<<(6))-1);
-}
-
-static inline void _wireheader_setcongestion(struct rmap_wireheader *w, uint32_t c)
-{
-    ASSERT_TRUE(c <= 127);
-    if (!c) { c++; }
-    w->cas = (w->cas & 1) | (c << 1);
-}
-
-static inline void _wireheader_setpenalty(struct rmap_wireheader *w, uint16_t p)
-{
-    w->penalty_be = arch_htobe16(p);
-}
-
-static inline void _wireheader_setsuppresson(struct rmap_wireheader *w, bool s)
-{
-    w->cas = w->cas >> 1 << 1;
-    w->cas |= (s ? 1 : 0);
-}
-
-struct PACKONE sess_wireheader
-{
-    uint8_t pubkey[32];
-
-    struct rmap_wireheader sh;
-
-    uint32_t version_be;
-
-    #define SESS_WIREHEADER_flags_INCOMING 1
-    #define SESS_WIREHEADER_flags_CTRLMSG (1<<1)
-    uint8_t flags;
-
-    uint8_t u; /* UNUSED... */
-    uint16_t uu; /* UNUSED... */
-
-    uint8_t ip6[16];
-};
-#define SESS_WIREHEADER_LENGTH (56 + RELAYMAP_HEADER_LENGTH)
-ASSERT_COMPILETIME(SESS_WIREHEADER_LENGTH == sizeof(struct sess_wireheader));
-
-/*
-[uint32 content_options][content]
-*/
-typedef struct csock *(csock_send_h)(struct csock *csock, struct mbuf *mb);
+typedef struct csock *(csock_send_h)(struct csock *csock, enum CSOCK_TYPE type, void *data);
 
 struct csock {
   csock_send_h *send;
   struct csock *adj;
 };
 
-/** Defines a conduit */
-struct conduit {
-  struct csock csock; /* must be on top */
-  struct conduits *ctx;
-
-  uint8_t id; /* for relaymap */
-
-  struct le le;
-
-  char *name;
-  char *desc;
-  int state;
-
-  /*beacon_func*/
-
-};
-
-struct conduits;
-struct cd_relaymap;
-struct cd_cmdcenter;
-struct magi_eventdriver;
-
-int conduits_init( struct conduits **conduitsp, struct treeoflife *treeoflife );
-int conduits_register(struct conduits *conduits, const char *name, const char *desc, struct csock *csock);
-struct conduit *conduit_find( const struct conduits *conduits
-                            , const char *name );
-
-struct conduit_peer *conduits_peer_find( const struct conduits *conduits
-                         , const struct csock_addr *csaddr );
-
-int conduits_peer_ping(struct conduit_peer *p);
-
-int conduits_peer_bootstrap( struct conduit *conduit
-               , struct conduits *c
-               , bool outside_initiation
-               , const uint8_t *remote_pubkey
-               , const struct csock_addr *csaddr
-               , const char *pword
-               , const char *login
-               , const char *identifier );
-
-int conduits_debug(struct re_printf *pf, const struct conduits *conduits);
-
-int conduits_connect_tunif(struct conduits *conduits, struct csock *csock);
-
-#define container_of(p, t, m) \
-    (__extension__ ({                                                          \
-        const __typeof__(((t*)0)->m)*__mp = (p); \
-        (t*)((void*)(char*)__mp - offsetof(t, m)); \
-    }))
-
-static inline void csock_forward(struct csock *csock, struct mbuf *mb)
+static inline void csock_forward(struct csock *csock, enum CSOCK_TYPE type, void *data)
 {
-    do {
-        struct csock* adj = csock->adj;
-        csock = adj->send(adj, mb);
-    } while (csock);
+  do {
+    struct csock* adj = csock->adj;
+    if (!adj || !adj->send) return;
+    csock = adj->send(adj, type, data);
+  } while (csock);
 }
 
-static inline struct csock *csock_next(struct csock *csock, struct mbuf *mb)
+static inline struct csock *csock_next(struct csock *csock, enum CSOCK_TYPE type, void *data)
 {
   if (!csock || !csock->adj) return NULL;
-  csock_forward(csock, mb);
+  csock_forward(csock, type, data);
   return NULL;
 }
-
-/* used for call loops */
-#define CSOCK_CALL(f, ctx, mb) \
-    do {                                          \
-        struct csock* out_cs = f(ctx, mb);      \
-        if (out_cs) { csock_next(out_cs, mb); }   \
-    } while (0)
-
 
 static inline void csock_flow(struct csock *c_a, struct csock *c_b)
 {
   if (!c_a || !c_b) return;
-    c_a->adj = c_b;
-    c_b->adj = c_a;
+  c_a->adj = c_b;
+  c_b->adj = c_a;
 }
 
 static inline void csock_stop(struct csock *c)
@@ -369,228 +145,393 @@ static inline void csock_stop(struct csock *c)
 }
 
 /*
+ * NOISE
+ */
+
+enum NOISE_SESSION_EVENT {
+    NOISE_SESSION_EVENT_INIT = 0
+  , NOISE_SESSION_EVENT_CLOSE = 1
+  , NOISE_SESSION_EVENT_ZERO = 2
+  , NOISE_SESSION_EVENT_HSHAKE = 3
+  , NOISE_SESSION_EVENT_HSXMIT = 4
+  , NOISE_SESSION_EVENT_CONNECTED = 5
+  , NOISE_SESSION_EVENT_REKEY = 6
+  , NOISE_SESSION_EVENT_BEGIN_PILOT = 7
+  , NOISE_SESSION_EVENT_BEGIN_COPILOT = 8
+};
+
+static inline const char * noise_session_event_tostr(enum NOISE_SESSION_EVENT event)
+{
+  switch (event) {
+    case NOISE_SESSION_EVENT_INIT:
+      return "INIT";
+    case NOISE_SESSION_EVENT_CLOSE:
+      return "CLOSE";
+    case NOISE_SESSION_EVENT_ZERO:
+      return "ZERO";
+    case NOISE_SESSION_EVENT_HSHAKE:
+      return "HANDSHAKE";
+    case NOISE_SESSION_EVENT_HSXMIT:
+      return "HSXMIT";
+    case NOISE_SESSION_EVENT_CONNECTED:
+      return "CONNECTED";
+    case NOISE_SESSION_EVENT_REKEY:
+      return "REKEY";
+    case NOISE_SESSION_EVENT_BEGIN_PILOT:
+      return "PILOT";
+    case NOISE_SESSION_EVENT_BEGIN_COPILOT:
+      return "COPILOT";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+typedef void (noise_session_recv_h)(struct noise_session *s, struct mbuf *mb, void *arg);
+
+typedef void (noise_session_event_h)(struct noise_session *s, enum NOISE_SESSION_EVENT event, void *arg);
+
+enum noise_lengths {
+    NOISE_PUBLIC_KEY_LEN = 32U
+  , NOISE_SECRET_KEY_LEN = 32U
+  , NOISE_SYMMETRIC_KEY_LEN = crypto_aead_chacha20poly1305_IETF_KEYBYTES
+  , NOISE_TIMESTAMP_LEN = sizeof(uint64_t) + sizeof(uint32_t)
+  , NOISE_AUTHTAG_LEN = crypto_aead_chacha20poly1305_IETF_ABYTES
+  , NOICE_NONCE_LEN = crypto_aead_chacha20poly1305_IETF_NPUBBYTES
+  , NOISE_HASH_LEN = 32U
+};
+
+enum NOISE_SESSION_HANDLE {
+    NOISE_SESSION_HANDLE_RECV = 0
+  , NOISE_SESSION_HANDLE_EVENT = 1
+};
+
+enum NOISE_ENGINE_RECIEVE {
+    NOISE_ENGINE_RECIEVE_EBADMSG = -1
+  , NOISE_ENGINE_RECIEVE_OK = 0
+  , NOISE_ENGINE_RECIEVE_EINVAL = 1
+  , NOISE_ENGINE_RECIEVE_DECRYPTED = 2
+};
+
+struct noise_si {
+  bool has_identity;
+  uint8_t public[NOISE_PUBLIC_KEY_LEN];
+  uint8_t private[NOISE_PUBLIC_KEY_LEN];
+};
+
+struct noise_engine {
+  uint8_t hshake_hash[NOISE_HASH_LEN];
+  uint8_t hshake_chaining_key[NOISE_HASH_LEN];
+
+  struct noise_si si;
+
+  struct list sessions_all;
+  struct hash *idlookup;
+
+  uint32_t sessions_counter;
+
+  struct list handlers_event;
+
+  struct csock cs_event;
+
+};
+
+struct noise_event {
+  struct noise_engine *ne;
+  struct noise_session *ns;
+  enum NOISE_SESSION_EVENT type;
+};
+
+void noise_si_private_key_set( struct noise_si *si
+                             , const uint8_t private_key[NOISE_PUBLIC_KEY_LEN] );
+
+uint64_t noise_session_score(struct noise_session *ns);
+
+int noise_session_keepalive_send(struct noise_session *ns);
+int noise_session_keepalive_recv(struct noise_session *ns, struct mbuf *mb);
+
+int noise_session_hs_step1_pilot( struct noise_session *ns
+                                , bool is_retry
+                                , struct csock *csock );
+
+int noise_session_send(struct noise_session *ns, struct mbuf *mb);
+
+int noise_session_handle_register( struct noise_session *ns
+                                 , enum NOISE_SESSION_HANDLE type
+                                 , struct csock *csock );
+
+int noise_session_publickey_copy( struct noise_session *ns
+                                , uint8_t public_key[NOISE_PUBLIC_KEY_LEN] );
+
+int noise_session_new( struct noise_session **sessionp
+                     , struct noise_engine *ne
+                     , uintptr_t channel_lock
+                     , const uint8_t public_key[NOISE_PUBLIC_KEY_LEN]
+                     , const uint8_t preshared_key[NOISE_SYMMETRIC_KEY_LEN] );
+
+struct noise_session *
+noise_engine_find_session_bykey( struct noise_engine *ne
+                               , uintptr_t channel_lock
+                               , const uint8_t key[NOISE_PUBLIC_KEY_LEN]);
+
+struct noise_idlookup *
+noise_engine_lookup_byid( struct noise_engine *ne
+                        , uint8_t kind
+                        , uint32_t key);
+
+#define noise_engine_lookup_session_byid(ne, key) \
+  container_of(noise_engine_lookup_byid(ne, NOISE_LOOKUP_KIND_SESSION, key), struct noise_session, lookup)
+
+#define noise_engine_lookup_keypair_byid(ne, key) \
+  container_of(noise_engine_lookup_byid(ne, NOISE_LOOKUP_KIND_KEYPAIR, key), struct noise_keypair, lookup)
+
+int noise_engine_session_handle_register( struct noise_engine *ne
+                                        , enum NOISE_SESSION_HANDLE type
+                                        , struct csock *csock );
+
+int noise_engine_recieve( struct noise_engine *ne
+                        , struct noise_session **nsp
+                        , uintptr_t channel_lock
+                        , struct mbuf *mb
+                        , struct csock *csock );
+
+int noise_engine_publickey_copy( struct noise_engine *ne
+                               , uint8_t public_key[NOISE_PUBLIC_KEY_LEN] );
+
+int noise_engine_init( struct noise_engine **nenginep );
+
+int noise_engine_test_counter(void);
+
+/*
+ * Conduits
+ */
+
+struct conduits;
+struct conduit_peer;
+
+typedef int (conduit_peer_create_h)(struct conduit_peer **peerp, struct pl *key, struct pl *host, void *arg);
+
+typedef int (conduit_send_h)(struct conduit_peer *peer, struct mbuf *mb, void *arg);
+
+typedef int (conduit_debug_h)(struct re_printf *pf, void *arg);
+
+#define CONDUIT_FLAG_BCAST   (1<<0) /* this conduit can broadcast messages */
+#define CONDUIT_FLAG_VIRTUAL (1<<1) /* for things like tree of life */
+
+struct conduit {
+  struct le le; /* struct conduits */
+  struct conduits *ctx;
+
+  uint8_t flags;
+
+  char *name;
+  char *desc;
+
+  conduit_peer_create_h *peer_create_h;
+  void *peer_create_h_arg;
+
+  conduit_send_h *send_h;
+  void *send_h_arg;
+
+  conduit_debug_h *debug_h;
+  void *debug_h_arg;
+};
+
+#define CONDUIT_PEER_FLAG_BCAST (1<<0)
+
+struct conduit_peer {
+  struct le le_addr;
+  uint8_t flags;
+  uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
+  struct conduit *conduit;
+  struct noise_session *ns;
+  enum NOISE_SESSION_EVENT ns_last_event;
+  struct csock csock;
+};
+
+struct conduit_data {
+  struct conduit_peer *cp;
+  struct mbuf *mb;
+};
+
+static inline int conduit_peer_debug(struct re_printf *pf, struct conduit_peer *peer)
+{
+  int err = 0;
+  struct sa laddr;
+  sa_set_in6(&laddr, peer->everip_addr, 0);
+  err  = re_hprintf(pf, "[%j][%s][SCORE=%u]"
+                      , &laddr
+                      , noise_session_event_tostr(peer->ns_last_event)
+                      , noise_session_score(peer->ns));
+  return err;
+}
+
+static inline void conduit_peer_deref(struct conduit_peer *peer)
+{
+  csock_stop(&peer->csock);
+  list_unlink(&peer->le_addr);
+  peer->ns = mem_deref( peer->ns );
+}
+
+int conduit_peer_encrypted_send( struct conduit_peer *cp
+                               , struct mbuf *mb );
+
+int conduit_peer_create( struct conduit_peer **peerp
+                       , struct conduit *conduit
+                       , struct pl *key
+                       , struct pl *host
+                       , bool do_handshake );
+
+int conduit_incoming( struct conduit *conduit
+                    , struct conduit_peer *cp
+                    , struct mbuf *mb );
+
+int conduit_register_peer_create( struct conduit *conduit
+                                , conduit_peer_create_h *peer_create_h
+                                , void *peer_create_h_arg );
+
+int conduit_register_send_handler( struct conduit *conduit
+                                 , conduit_send_h *send_h
+                                 , void *send_h_arg );
+
+int conduit_register_debug_handler( struct conduit *conduit
+                                  , conduit_debug_h *debug_h
+                                  , void *debug_h_arg );
+
+struct conduit_peer *
+conduits_conduit_peer_search( struct conduits *conduits
+                            , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
+
+int conduits_init( struct conduits **conduitsp
+                 , struct csock *csock );
+
+int conduits_register( struct conduit **conduit
+                     , struct conduits *conduits
+                     , uint8_t flags
+                     , const char *name
+                     , const char *desc );
+
+#define conduit_find conduit_find_byname
+struct conduit *conduit_find_byname( const struct conduits *conduits , const char *name );
+
+int conduits_debug(struct re_printf *pf, const struct conduits *conduits);
+
+
+/*
+ * LEDBAT
+ */
+
+enum {
+  // socket has reveived syn-ack (notification only for outgoing connection completion)
+  // this implies writability
+  LEDBAT_STATE_CONNECT = 1,
+  // socket is able to send more data
+  LEDBAT_STATE_WRITABLE = 2,
+  // connection closed
+  LEDBAT_STATE_EOF = 3,
+  // socket is being destroyed, meaning all data has been sent if possible.
+  // it is not valid to refer to the socket after this state change occurs
+  LEDBAT_STATE_DESTROYING = 4,
+};
+
+enum {
+  LEDBAT_ECONNREFUSED = 0,
+  LEDBAT_ECONNRESET,
+  LEDBAT_ETIMEDOUT,
+};
+
+enum {
+  LEDBAT_ON_FIREWALL = 0,
+  LEDBAT_ON_ACCEPT = 1,
+  LEDBAT_ON_CONNECT = 2,
+  LEDBAT_ON_ERROR = 3,
+  LEDBAT_ON_READ = 4,
+  LEDBAT_ON_OVERHEAD_STATISTICS = 5,
+  LEDBAT_ON_STATE_CHANGE = 6,
+  LEDBAT_ON_DELAY_SAMPLE = 8,
+  LEDBAT_GET_UDP_MTU = 9,
+  LEDBAT_GET_UDP_OVERHEAD = 10,
+  LEDBAT_GET_MILLISECONDS = 11,
+  LEDBAT_GET_MICROSECONDS = 12,
+  LEDBAT_GET_RANDOM = 13,
+  LEDBAT_LOG = 14,
+  LEDBAT_SENDTO = 15,
+  LEDBAT_PUBLIC_ARRAY_END, /* must be last */
+};
+
+struct ledbat;
+struct ledbat_sock;
+
+typedef struct {
+  struct ledbat *context;
+  struct ledbat_sock *socket;
+  size_t len;
+  uint32_t flags;
+  int callback_type;
+  const uint8_t *buf;
+
+  union {
+    const struct sockaddr *address;
+    int send;
+    int sample_ms;
+    int error_code;
+    int state;
+  } u1;
+
+} ledbat_callback_arguments;
+
+typedef uint64_t ledbat_callback_t(ledbat_callback_arguments *a, void *userdata);
+
+int ledbat_sock_connect( struct ledbat_sock *lsock
+                       , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
+
+int ledbat_sock_reconnect( struct ledbat_sock *lsock );
+
+int ledbat_sock_callback_register( struct ledbat_sock *lsock
+                                 , ledbat_callback_t *callback
+                                 , void *userdata );
+
+void *ledbat_sock_userdata_get( struct ledbat_sock *lsock );
+
+int ledbat_sock_userdata_set( struct ledbat_sock *lsock, void *userdata );
+
+int ledbat_sock_alloc( struct ledbat_sock **lsockp
+                     , struct ledbat *l );
+
+int ledbat_callback_register( struct ledbat *ledbat
+                            , ledbat_callback_t *callback
+                            , void *userdata );
+
+int ledbat_process_incoming( struct ledbat *l
+                           , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
+                           , struct mbuf *mb );
+
+int ledbat_alloc( struct ledbat **ledbatp );
+
+/*
  * MAGI
  */
 
-struct magi_eventdriver {
-  struct csock virtual_cs;
-  struct list csocks[EVD_STAR__TOO_HIGH - EVD_STAR__TOO_LOW];
-  struct list starfinders;
+struct magi;
+struct magi_node;
 
-  uint8_t pubkey[32];
-};
+int magi_node_ledbat_sock_set( struct magi_node *mnode
+                             , struct ledbat_sock *lsock );
 
-struct magi_starfinder {
-  struct csock eventd_cs;
-  struct tmr tmr;
+struct ledbat_sock *
+magi_node_ledbat_sock_get( struct magi_node *mnode );
 
-    #define STARFINDER_STATE_INITIALIZING 0
-    #define STARFINDER_STATE_RUNNING 1
-    uint8_t state;
+int magi_node_everipaddr_copy( struct magi_node *mnode
+                             , uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
 
-    uint8_t pathchangeinterval;
+struct magi_node *
+magi_node_lookup_by_eipaddr( struct magi *magi
+                           , uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
 
-    void *lua;
+struct magi_node *
+magi_node_lookup_or_create( struct magi *magi
+                          , uint8_t public_key[NOISE_PUBLIC_KEY_LEN] );
 
-    struct udp_sock *us; /* TEMPORARY */
-
-    struct list endnodes;
-
-    void *for_ping_resp; /* this is so ugly... */
-
-};
-
-int magi_eventdriver_init( struct magi_eventdriver **eventdp, uint8_t public_key[32] );
-void magi_eventdriver_register_core( struct magi_eventdriver *eventd , struct csock *csock , enum EVD_STAR ep );
-void magi_eventdriver_register_star( struct magi_eventdriver *eventd , struct csock *csock );
-int magi_starfinder_init( struct magi_starfinder **starfinderp, uint8_t publickey[32] );
-
-/*
- * Crypto
- */
-
-#if 1
-struct PACKONE cae_header
-{
-    uint32_t a;
-    struct {
-      uint8_t a;
-      uint8_t b[7];
-      uint16_t c;
-      uint16_t d;
-    } b;
-    uint8_t c[24];
-    uint8_t d[32];
-    uint8_t e[16];
-    uint8_t f[32];
-};
-ASSERT_COMPILETIME(CAE_HEADER_LENGTH == sizeof(struct cae_header));
-#endif
-
-struct caengine {
-  uint8_t my_ipv6[16];
-  uint8_t my_pubkey[32];
-  uint8_t my_prvkey[32];
-  uint8_t my_signkeys[64]; /* top = private; bottom = public */
-  struct list sessions;
-  struct list authtokens;
-
-  bool activated;
-};
-
-struct caengine_authtoken {
-  struct le le;
-
-  char *login;
-  char *pword;
-
-  uint8_t secret[32];
-  uint8_t uhash[8];
-  uint8_t phash[8];
-};
-
-struct caengine_replay_guard {
-  uint8_t hi;
-};
-
-enum session_nonce {
-    SESSION_NONCE_HELLO = 0,
-    SESSION_NONCE_REPEAT_HELLO = 1,
-    SESSION_NONCE_KEY = 2,
-    SESSION_NONCE_REPEAT_KEY = 3,
-    SESSION_NONCE_FIRST_TRAFFIC_PACKET = 4
-};
-
-enum CAENGINE_STATE {
-    CAENGINE_STATE_INIT = 0,
-    CAENGINE_STATE_SENT_HELLO = 1,
-    CAENGINE_STATE_RECEIVED_HELLO = 2,
-    CAENGINE_STATE_SENT_KEY = 3,
-    CAENGINE_STATE_RECEIVED_KEY = 4,
-    CAENGINE_STATE_ESTABLISHED = 100
-};
-
-struct caengine_session {
-  struct le le;
-  struct caengine *ctx;
-
-  uint8_t remote_ip6[16];
-
-    uint8_t sharedsecretkey[32];
-  uint8_t remote_pubkey[32];
-    uint8_t remote_tmp_pubkey[32];
-    uint8_t local_tmp_prvkey[32];
-    uint8_t local_tmp_pubkey[32];
-
-  uint64_t lastpkt_ts;
-  uint64_t seconds_to_reset;
-
-  struct caengine_replay_guard replay_guard;
-
-  char *login;
-  char *pword;
-  uint8_t auth_type;
-
-  uint32_t nonce_next;
-  bool is_initiator : 1;
-  bool req_auth : 1;
-  bool established : 1;
-
-  char *dbg;
-
-};
-
-
-enum CAENGINE_DECRYPTERR {
-    CAENGINE_DECRYPTERR_NONE = 0,
-    CAENGINE_DECRYPTERR_RUNT = 1,
-    CAENGINE_DECRYPTERR_NO_SESSION = 2,
-    CAENGINE_DECRYPTERR_FINAL_SHAKE_FAIL = 3,
-    CAENGINE_DECRYPTERR_FAILED_DECRYPT_RUN_MSG = 4,
-    CAENGINE_DECRYPTERR_KEY_PKT_ESTABLISHED_SESSION = 5,
-    CAENGINE_DECRYPTERR_WRONG_PERM_PUBKEY = 6,
-    CAENGINE_DECRYPTERR_IP_RESTRICTED = 7,
-    CAENGINE_DECRYPTERR_AUTH_REQUIRED = 8,
-    CAENGINE_DECRYPTERR_UNRECOGNIZED_AUTH = 9,
-    CAENGINE_DECRYPTERR_STRAY_KEY = 10,
-    CAENGINE_DECRYPTERR_HANDSHAKE_DECRYPT_FAILED = 11,
-    CAENGINE_DECRYPTERR_WISEGUY = 12,
-    CAENGINE_DECRYPTERR_INVALID_PACKET = 13,
-    CAENGINE_DECRYPTERR_REPLAY = 14,
-    CAENGINE_DECRYPTERR_DECRYPT = 15
-};
-
-int caengine_init( struct caengine **caenginep );
-
-int caengine_authtoken_add( struct caengine *caengine
-                          , const char *login
-                          , const char *pword );
-
-/* X:S session */
-int caengine_session_new( struct caengine_session **sessionp
-              , struct caengine *c
-              , const uint8_t remote_pubkey[32]
-              , const bool req_auth );
-enum CAENGINE_DECRYPTERR caengine_session_decrypt(struct caengine_session *session, struct mbuf *mb);
-int caengine_session_encrypt(struct caengine_session *session, struct mbuf *mb);
-enum CAENGINE_STATE caengine_session_state(struct caengine_session *session);
-void caengine_session_reset(struct caengine_session *session);
-void caengine_session_resetiftimedout(struct caengine_session *session);
-void caengine_session_setdbg(struct caengine_session *session, const char *name);
-void caengine_session_setauth( struct caengine_session *session , const char *pword , const char *login );
-/* X:E session */
-
-int caengine_keys_parse(struct pl *key, uint8_t out[32]);
-int caengine_keys_tostr(char **outp, uint8_t key[32]);
-int caengine_address_validity(const uint8_t address[16]);
-int caengine_address_frompubkey(uint8_t out[16], const uint8_t in[32]);
-
-int caengine_debug(struct re_printf *pf, struct caengine *c);
-
-void cryptosign_skpk_fromcurve25519(uint8_t skpk[64], uint8_t sk[32]);
-void cryptosign_pk_fromskpk(uint8_t pk[32], uint8_t skpk[64]);
-void cryptosign_bytes(uint8_t skpk[64], uint8_t *m, size_t mlen);
-int cryptosign_bytes_verify(uint8_t pk[32], uint8_t *s, uint8_t *m, size_t mlen);
-
-/*
- * Pinger
- */
-
-typedef void (mrpinger_pong_h)(struct pl *_pl, uint32_t version, uint64_t ttl, void *userdata);
-typedef void (mrpinger_ping_h)(uint32_t hashid, uint64_t cookie, void *userdata);
-
-
-struct mrpinger {
-  struct hash *clocks;
-};
-
-struct mrpinger_clock {
-  struct le le;
-  struct tmr tmr;
-
-  uint32_t hashid;
-  uint64_t cookie;
-
-  uint64_t time_sent;
-  uint64_t time_delay;
-
-  mrpinger_pong_h *cb_pong;
-  mrpinger_ping_h *cb_ping;
-
-  void *userdata;
-
-};
-
-int mrpinger_init( struct mrpinger **mrpingerp );
-int mrpinger_ping( struct mrpinger *pinger
-         , uint64_t delay
-         , mrpinger_pong_h *cb_pong
-         , mrpinger_ping_h *cb_ping
-         , void *userdata );
-
-int mrpinger_pong( struct mrpinger *pinger
-         , uint32_t version
-         , struct pl *_pl );
+int magi_alloc(struct magi **magip);
 
 /*
  * AT Field
@@ -614,7 +555,7 @@ struct atfield_item {
           uint64_t two_be;
           uint64_t one_be;
       } l;
-      uint8_t b[ADDR_SEARCH_TARGET_SIZE];
+      uint8_t b[EVERIP_ADDRESS_LENGTH];
   } ip6;
   uint8_t mode;
 };
@@ -625,133 +566,12 @@ struct atfield {
 };
 
 int atfield_init( struct atfield **atfieldp );
-int atfield_remove( struct atfield *at , uint8_t ip6[ADDR_SEARCH_TARGET_SIZE] );
-uint8_t atfield_check( struct atfield *at , uint8_t ip6[ADDR_SEARCH_TARGET_SIZE] );
-int atfield_add( struct atfield *at , uint8_t ip6[ADDR_SEARCH_TARGET_SIZE] , uint8_t mode );
+int atfield_remove( struct atfield *at , uint8_t ip6[EVERIP_ADDRESS_LENGTH] );
+uint8_t atfield_check( struct atfield *at , uint8_t ip6[EVERIP_ADDRESS_LENGTH] );
+int atfield_add( struct atfield *at , uint8_t ip6[EVERIP_ADDRESS_LENGTH] , uint8_t mode );
 void atfield_gowhite( struct atfield *at, bool gowhite);
 
 int atfield_debug(struct re_printf *pf, const struct atfield *atfield);
-
-
-/*
- * Conduit Peer
- */
-
-enum CONDUIT_PEERSTATE
-{
-    CONDUIT_PEERSTATE_INIT = CAENGINE_STATE_INIT,
-    CONDUIT_PEERSTATE_SENT_HELLO = CAENGINE_STATE_SENT_HELLO,
-    CONDUIT_PEERSTATE_RECEIVED_HELLO = CAENGINE_STATE_RECEIVED_HELLO,
-    CONDUIT_PEERSTATE_SENT_KEY = CAENGINE_STATE_SENT_KEY,
-    CONDUIT_PEERSTATE_RECEIVED_KEY = CAENGINE_STATE_RECEIVED_KEY,
-    CONDUIT_PEERSTATE_ESTABLISHED = CAENGINE_STATE_ESTABLISHED,
-    CONDUIT_PEERSTATE_UNRESPONSIVE = -1,
-    CONDUIT_PEERSTATE_UNAUTHENTICATED = -2,
-};
-
-struct conduit_peer {
-  uint64_t pad;
-  struct le le;
-  struct le le_all;
-  uint64_t pad2;
-  struct conduit *conduit;
-
-  struct csock_addr csaddr;
-  struct addr addr;
-
-  struct caengine_session *caes;
-
-  enum CONDUIT_PEERSTATE state;
-
-  uint64_t lastmsg_ts;
-  uint64_t lastping_ts;
-
-  uint32_t cnt_ping;
-
-  uint64_t bytes_in;
-  uint64_t bytes_out;
-
-  bool outside_initiation;
-};
-
-/*
- * GeoFront
- */
-
-struct geofront
-{
-  uint8_t gendo;
-};
-
-int geofront_init( struct geofront **geofrontp );
-
-/*
- * Terminal Dogma
- */
-
-struct tmldogma {
-    struct csock ctrdogma_cs;
-    struct csock tunadapt_cs;
-    struct csock eventd_cs;
-
-    uint8_t ip6[16];
-};
-
-int tmldogma_init( struct tmldogma **tmldogmap , struct magi_eventdriver *eventd, uint8_t ip6[16] );
-
-/*
- * Central Dogma
- */
-
-#define RELAYMAP_SLOT_MAX (254)
-
-enum RELAYMAP_SLOT_STATE {
-     RELAYMAP_SLOT_STATE_WIPE = 0
-    ,RELAYMAP_SLOT_STATE_DOWN = 1
-    ,RELAYMAP_SLOT_STATE_ISUP = 2
-    ,RELAYMAP_SLOT_STATE_CEIL = 3
-};
-
-struct cd_relaymap;
-
-struct cd_relaymap_slot {
-  struct csock csock;
-  enum RELAYMAP_SLOT_STATE state;
-  struct cd_relaymap *map;
-};
-
-struct cd_relaymap {
-  struct csock *router_cs;
-  struct cd_relaymap_slot slots[ RELAYMAP_SLOT_MAX ];
-  /* X:S pinger */
-  /* X:E pinger */
-};
-
-struct cd_manager {
-  struct csock relaymap_cs;
-  struct csock cmdcenter_cs;
-  struct csock terminaldogma_cs;
-  struct csock eventd_cs;
-
-  struct hash *sessions;
-};
-
-struct cd_cmdcenter {
-    struct csock manager_cs;
-    struct csock rpinger_cs;
-
-  uint8_t local_pubkey[32];
-};
-
-int cd_relaymap_init( struct cd_relaymap **relaymapp );
-void cd_relaymap_slot_setstate( struct cd_relaymap_slot *slot , enum RELAYMAP_SLOT_STATE state );
-int cd_relaymap_slot_add( uint64_t* out_label , struct cd_relaymap *map , struct csock *csock );
-void cd_relaymap_slot_setstate( struct cd_relaymap_slot *slot, enum RELAYMAP_SLOT_STATE state );
-
-int cd_cmdcenter_init( struct cd_cmdcenter **cmdcenterp, const uint8_t local_pubkey[32]);
-struct csock *cd_cmdcenter_sendcmd( struct cd_cmdcenter *cmdcenter, struct mbuf *mb );
-
-int cd_manager_init( struct cd_manager **managerp, struct magi_eventdriver *eventd );
 
 /*
  * TUN
@@ -761,13 +581,13 @@ int cd_manager_init( struct cd_manager **managerp, struct magi_eventdriver *even
 #define TUN_IFNAMSIZ (512)
 
 struct tunif {
-  struct csock tmldogma_cs;
   int fd;
   char name[TUN_IFNAMSIZ];
+
+  struct csock cs_tmldogma;
 };
 
 int tunif_init( struct tunif **tunifp );
-
 
 /*
  * Stacks
@@ -840,18 +660,6 @@ struct treeoflife {
 
   struct list dht_items;
 };
-
-#if 0 /* X:DELETE */
-struct treeoflife_node {
-  struct le le[ZONE_COUNT];
-  struct treeoflife *tree;
-  uint8_t key[KEY_LENGTH];
-  struct treeoflife_peer *peer;
-
-  uint8_t binlen;
-  uint8_t binrep[ROUTE_LENGTH];
-};
-#endif
 
 int treeoflife_init( struct treeoflife **treeoflifep, uint8_t public_key[KEY_LENGTH] );
 int treeoflife_debug(struct re_printf *pf, const struct treeoflife *t);
@@ -1036,14 +844,17 @@ struct cmds *cmds_find(const struct commands *commands,
  * EVER/IP instance
  */
 
-int  everip_init(void);
+int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
+               , uint16_t port_default );
 void everip_close(void);
+
 struct network *everip_network(void);
+struct magi *everip_magi(void);
+struct ledbat *everip_ledbat(void);
 struct commands *everip_commands(void);
-struct caengine *everip_caengine(void);
+struct noise_engine *everip_noise(void);
 struct conduits *everip_conduits(void);
 struct atfield *everip_atfield(void);
-struct treeoflife *everip_treeoflife(void);
 
 /* udp port */
 void everip_udpport_set(uint16_t port);
