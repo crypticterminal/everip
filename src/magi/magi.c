@@ -183,7 +183,6 @@ magi_node_lookup_or_create( struct magi *magi
              , &mnode->le_idx_addr
              , mnode);
 
-out:
   if (err) {
     mnode = mem_deref( mnode );
   }

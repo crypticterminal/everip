@@ -94,15 +94,41 @@ int addr_base32_decode( uint8_t* out , const uint32_t olen , const uint8_t* in ,
 int addr_base32_encode( uint8_t* out , const uint32_t olen , const uint8_t* in , const uint32_t ilen );
 
 /*
+ * EVENTS
+ */
+
+struct magi_eventdriver;
+struct magi_eventdriver_handler;
+
+enum MAGI_EVENTDRIVER_WATCH {
+     MAGI_EVENTDRIVER_WATCH_NOISE  = 0
+   , MAGI_EVENTDRIVER_WATCH_LEDBAT
+   , MAGI_EVENTDRIVER_WATCH_MAX /* must be last! */
+};
+
+typedef int (magi_eventdriver_h)(enum MAGI_EVENTDRIVER_WATCH type, void *data, void *arg);
+
+int magi_eventdriver_handler_run( struct magi_eventdriver *ed
+                                , enum MAGI_EVENTDRIVER_WATCH type
+                                , void *data );
+
+int magi_eventdriver_handler_register( struct magi_eventdriver *ed
+                                     , enum MAGI_EVENTDRIVER_WATCH type
+                                     , magi_eventdriver_h *handler
+                                     , void *userdata );
+
+int magi_eventdriver_alloc(struct magi_eventdriver **edp);
+
+/*
  * CSOCK
  */
 
 struct csock;
 
 enum CSOCK_TYPE {
-    CSOCK_TYPE_DATA_MB = 0
-  , CSOCK_TYPE_DATA_CONDUIT
-  , CSOCK_TYPE_NOISE_EVENT
+     CSOCK_TYPE_DATA_MB = 0
+   , CSOCK_TYPE_DATA_CONDUIT
+   , CSOCK_TYPE_NOISE_EVENT
 };
 
 typedef struct csock *(csock_send_h)(struct csock *csock, enum CSOCK_TYPE type, void *data);
@@ -149,15 +175,15 @@ static inline void csock_stop(struct csock *c)
  */
 
 enum NOISE_SESSION_EVENT {
-    NOISE_SESSION_EVENT_INIT = 0
-  , NOISE_SESSION_EVENT_CLOSE = 1
-  , NOISE_SESSION_EVENT_ZERO = 2
-  , NOISE_SESSION_EVENT_HSHAKE = 3
-  , NOISE_SESSION_EVENT_HSXMIT = 4
-  , NOISE_SESSION_EVENT_CONNECTED = 5
-  , NOISE_SESSION_EVENT_REKEY = 6
-  , NOISE_SESSION_EVENT_BEGIN_PILOT = 7
-  , NOISE_SESSION_EVENT_BEGIN_COPILOT = 8
+     NOISE_SESSION_EVENT_INIT = 0
+   , NOISE_SESSION_EVENT_CLOSE = 1
+   , NOISE_SESSION_EVENT_ZERO = 2
+   , NOISE_SESSION_EVENT_HSHAKE = 3
+   , NOISE_SESSION_EVENT_HSXMIT = 4
+   , NOISE_SESSION_EVENT_CONNECTED = 5
+   , NOISE_SESSION_EVENT_REKEY = 6
+   , NOISE_SESSION_EVENT_BEGIN_PILOT = 7
+   , NOISE_SESSION_EVENT_BEGIN_COPILOT = 8
 };
 
 static inline const char * noise_session_event_tostr(enum NOISE_SESSION_EVENT event)
@@ -233,6 +259,8 @@ struct noise_engine {
 
   struct csock cs_event;
 
+  struct magi_eventdriver *ed;
+
 };
 
 struct noise_event {
@@ -297,7 +325,7 @@ int noise_engine_recieve( struct noise_engine *ne
 int noise_engine_publickey_copy( struct noise_engine *ne
                                , uint8_t public_key[NOISE_PUBLIC_KEY_LEN] );
 
-int noise_engine_init( struct noise_engine **nenginep );
+int noise_engine_init( struct noise_engine **nenginep, struct magi_eventdriver *ed);
 
 int noise_engine_test_counter(void);
 
@@ -402,7 +430,8 @@ conduits_conduit_peer_search( struct conduits *conduits
                             , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
 
 int conduits_init( struct conduits **conduitsp
-                 , struct csock *csock );
+                 , struct csock *csock
+                 , struct magi_eventdriver *ed );
 
 int conduits_register( struct conduit **conduit
                      , struct conduits *conduits

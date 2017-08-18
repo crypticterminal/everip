@@ -191,14 +191,14 @@ int test_noise(void)
   err = noise_engine_test_counter();
   TEST_ERR(err);
 
-  err = noise_engine_init( &ne1 );
+  err = noise_engine_init( &ne1, NULL);
   TEST_ERR(err);
 
   noise_si_private_key_set( &ne1->si, a_prv );
 
   TEST_MEMCMP(a_pub, NOISE_PUBLIC_KEY_LEN, ne1->si.public, NOISE_PUBLIC_KEY_LEN);
 
-  err = noise_engine_init( &ne2 );
+  err = noise_engine_init( &ne2, NULL);
   TEST_ERR(err);
 
   noise_si_private_key_set( &ne2->si, b_prv );

@@ -28,6 +28,8 @@ static struct everip {
 
   uint8_t myaddr[EVERIP_ADDRESS_LENGTH];
 
+  struct magi_eventdriver *eventdriver;
+
   /* ritsuko */
   struct network *net;
   struct commands *commands;
@@ -40,7 +42,6 @@ static struct everip {
   struct noise_engine *noise;
   struct conduits *conduits;
 
-  /* treeoflife */
   struct atfield *atfield;
 
   struct ledbat *ledbat;
@@ -104,20 +105,20 @@ static uint64_t ledbat_callback_h(ledbat_callback_arguments *a, void *arg)
       return 0;
     }
 
-    magi_node_ledbat_sock_set(mnode, a->socket);
+    magi_node_ledbat_sock_set(mnode, NULL);
+
     ledbat_sock_userdata_set(a->socket, mnode );
+    magi_node_ledbat_sock_set(mnode, a->socket);
 
   } else if (a->callback_type == LEDBAT_ON_ERROR) {
-    /* terminate! */
     mnode = ledbat_sock_userdata_get( a->socket );
-    if (a->u1.error_code == LEDBAT_ECONNRESET) {
-      /* simply reconnect! */
-      ledbat_sock_reconnect( a->socket );
-    } else {
-      magi_node_ledbat_sock_set(mnode, NULL);
-    }
+    
+    if (!mnode)
+      goto out;
+    
+    magi_node_ledbat_sock_set(mnode, NULL);
   }
-
+out:
   return 0 ;
 }
 
@@ -171,7 +172,7 @@ static struct csock *_from_conduits( struct csock *csock
   if (!csock || type != CSOCK_TYPE_DATA_CONDUIT || !cdata)
     return NULL;
 
-  debug("everip: _from_conduits\n");
+  debug("everip: _from_conduits [%u]\n", mbuf_get_left(cdata->mb));
 
   if (mbuf_get_left(cdata->mb) < 2)
     return NULL;
@@ -201,10 +202,13 @@ static struct csock *_from_conduits( struct csock *csock
     }
 
     mbuf_advance(cdata->mb, -4);
+
     ((uint16_t*)(void *)mbuf_buf(cdata->mb))[0] = 0;
     ((uint16_t*)(void *)mbuf_buf(cdata->mb))[1] = arch_htobe16(0x86DD);
 
-    csock_forward(&everip.cs_tunnel, CSOCK_TYPE_DATA_MB, cdata->mb);
+    csock_forward( &everip.cs_tunnel
+                 , CSOCK_TYPE_DATA_MB
+                 , cdata->mb );
   } else {
     /* later check return value... */
     ledbat_process_incoming( everip_ledbat()
@@ -214,6 +218,69 @@ static struct csock *_from_conduits( struct csock *csock
 
   return NULL;
 
+}
+
+static int magi_event_watcher_h(enum MAGI_EVENTDRIVER_WATCH type, void *data, void *arg)
+{
+  struct noise_event *event = data;
+
+  if (!data)
+    return 0;
+
+  if (type == MAGI_EVENTDRIVER_WATCH_NOISE) {
+    struct magi_node *mnode = NULL;
+    struct ledbat_sock *lsock = NULL;
+    uint8_t public_key[NOISE_PUBLIC_KEY_LEN];
+    uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
+
+    switch (event->type) {
+      case NOISE_SESSION_EVENT_INIT:
+        break;
+      case NOISE_SESSION_EVENT_CLOSE:
+        break;
+      case NOISE_SESSION_EVENT_ZERO:
+        break;
+      case NOISE_SESSION_EVENT_HSHAKE:
+        break;
+      case NOISE_SESSION_EVENT_HSXMIT:
+        break;
+      case NOISE_SESSION_EVENT_CONNECTED:
+        break;
+      case NOISE_SESSION_EVENT_REKEY:
+        break;
+      case NOISE_SESSION_EVENT_BEGIN_PILOT:
+      case NOISE_SESSION_EVENT_BEGIN_COPILOT:
+        debug("GOGOGOGOGOGO!\n");
+        if (noise_session_publickey_copy(event->ns, public_key))
+          goto out;
+
+        mnode = magi_node_lookup_or_create(everip.magi, public_key);
+        if (!mnode)
+          goto out;
+
+        magi_node_everipaddr_copy(mnode, everip_addr);
+
+        magi_node_ledbat_sock_set(mnode, NULL);
+
+        if (event->type == NOISE_SESSION_EVENT_BEGIN_PILOT) {
+          error("ATTEMPTING TO CONNECT VIA LEDBAT\n");
+          ledbat_sock_alloc(&lsock, everip.ledbat );
+          if (!lsock)
+            goto out;
+
+          ledbat_sock_userdata_set(lsock, mnode);
+
+          ledbat_sock_connect(lsock, everip_addr);
+
+        }
+        break;
+      default:
+        error("everip: _noise_h: unknown type <%d>\n", event->type);
+        break;
+    }
+  }
+out:
+  return 0;
 }
 
 int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
@@ -231,6 +298,22 @@ int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
   /* Initialise Network */
   err = net_alloc(&everip.net);
   if (err) {
+    return err;
+  }
+
+  err = magi_eventdriver_alloc(&everip.eventdriver);
+  if (err) {
+    error("everip_init: magi_eventdriver_alloc\n");
+    return err;
+  }
+
+  /* register events */
+  err = magi_eventdriver_handler_register( everip.eventdriver
+                                         , MAGI_EVENTDRIVER_WATCH_NOISE
+                                         , magi_event_watcher_h
+                                         , NULL );
+  if (err) {
+    error("everip_init: magi_eventdriver_handler_register\n");
     return err;
   }
 
@@ -258,7 +341,7 @@ int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
     return err;
   }
 
-  err = noise_engine_init( &everip.noise );
+  err = noise_engine_init( &everip.noise, everip.eventdriver);
   if (err) {
     error("everip_init: noise_engine_init\n");
     return err;
@@ -279,7 +362,9 @@ int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
       everip.udp_port = port_default ? port_default : 1988;
 
   everip.cs_conduits.send = _from_conduits;
-  err = conduits_init( &everip.conduits, &everip.cs_conduits );
+  err = conduits_init( &everip.conduits
+                     , &everip.cs_conduits
+                     , everip.eventdriver);
   if (err) {
     error("everip_init: conduits_init\n");
     return err;
@@ -363,8 +448,10 @@ skip_tun:
 void everip_close(void)
 {
 
-    everip.magi = mem_deref( everip.magi );
+    /* handles sendto, etc. */
     everip.ledbat = mem_deref(everip.ledbat);
+
+    everip.magi = mem_deref( everip.magi );
 
     everip.netevent = mem_deref(everip.netevent);
 
@@ -375,8 +462,8 @@ void everip_close(void)
     everip.atfield = mem_deref(everip.atfield);
 
     everip.conduits = mem_deref(everip.conduits);
-
     everip.noise = mem_deref(everip.noise);
+    everip.eventdriver = mem_deref(everip.eventdriver);
 }
 
 

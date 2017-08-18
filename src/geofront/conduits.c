@@ -30,6 +30,8 @@ struct conduits {
 
   struct tmr beacon;
 
+  struct magi_eventdriver *ed;
+
 };
 
 int conduits_debug(struct re_printf *pf, const struct conduits *conduits)
@@ -104,7 +106,6 @@ static struct csock *_noise_h( struct csock *csock
     case CSOCK_TYPE_NOISE_EVENT:
       {
         uint8_t public_key[NOISE_PUBLIC_KEY_LEN];
-        struct magi_node *mnode = NULL;
 
         peer->ns_last_event = event->type;
 
@@ -132,10 +133,6 @@ static struct csock *_noise_h( struct csock *csock
 
             /* hash it and make sure it starts with fc */
             if (!addr_calc_pubkeyaddr( peer->everip_addr, public_key ))
-              goto out;
-
-            mnode = magi_node_lookup_or_create(everip_magi(), public_key );
-            if (!mnode)
               goto out;
 
             list_unlink( &peer->le_addr );
@@ -204,7 +201,7 @@ int conduit_peer_create( struct conduit_peer **peerp
                          , everip_noise()
                          , (uintptr_t)conduit
                          , public_key
-                         , NULL /*preshared_key*/);
+                         , NULL /* preshared_key */ );
   if (err)
     return err;
 
@@ -262,6 +259,7 @@ int conduit_incoming( struct conduit *conduit
 
     return 0;
   } else {
+
     ne_rx = noise_engine_recieve( everip_noise()
                                 , &ns
                                 , (uintptr_t)conduit
@@ -301,6 +299,8 @@ static struct csock *_from_outside( struct csock *csock
 static bool _conduits_conduit_peer_lookup(struct le *le, void *arg)
 {
   struct conduit_peer *cp = le->data;
+  if (cp->ns_last_event < NOISE_SESSION_EVENT_CONNECTED)
+    return false;
   return 0 == memcmp(cp->everip_addr, (uint8_t *)arg, EVERIP_ADDRESS_LENGTH);
 }
 
@@ -459,7 +459,8 @@ static void conduits_destructor(void *data)
 }
 
 int conduits_init( struct conduits **conduitsp
-                 , struct csock *csock )
+                 , struct csock *csock
+                 , struct magi_eventdriver *ed )
 {
   struct conduits *conduits;
 
@@ -469,6 +470,8 @@ int conduits_init( struct conduits **conduitsp
   conduits = mem_zalloc(sizeof(*conduits), conduits_destructor);
   if (!conduits)
     return ENOMEM;
+
+  conduits->ed = ed;
 
   hash_alloc(&conduits->hash_cp_addr, 16);
 

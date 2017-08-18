@@ -179,7 +179,6 @@ struct noise_session {
   struct tmr tmr_hs_new, tmr_hs_rexmit, tmr_keepalive, tmr_zero, tmr_persist;
 
   struct csock cs_recv;
-  struct csock cs_event;
 
 };
 
@@ -238,8 +237,12 @@ static void noise_session_event_run( struct noise_session *ns
   if (ns->keypair_now) {
     csock_forward(&ns->keypair_now->csock, CSOCK_TYPE_NOISE_EVENT, &event);
   }
-  csock_forward(&ns->cs_event, CSOCK_TYPE_NOISE_EVENT, &event);
-  csock_forward(&ns->ne->cs_event, CSOCK_TYPE_NOISE_EVENT, &event);
+  
+  magi_eventdriver_handler_run( ns->ne->ed
+                              , MAGI_EVENTDRIVER_WATCH_NOISE
+                              , &event );
+  /*csock_forward(&ns->cs_event, CSOCK_TYPE_NOISE_EVENT, &event);*/
+  /*csock_forward(&ns->ne->cs_event, CSOCK_TYPE_NOISE_EVENT, &event);*/
 
 }
 
@@ -849,6 +852,9 @@ static bool noise_session_hs_step3_copilot( struct mbuf **mb_replyp
                   , key
                   , ns->handshake.hash );
 
+  /* unlink if were linked */
+  hash_unlink(&ns->lookup.le);
+
   ns->lookup.id = ns->ne->sessions_counter++;
   hash_append( ns->ne->idlookup
              , ns->lookup.id
@@ -1257,8 +1263,6 @@ int noise_session_keepalive_send(struct noise_session *ns)
   if (!ns)
     return EINVAL;
 
-  error("noise_session_keepalive_send\n");
-
   ns->keepalive_nonce = (uint16_t)randombytes_uniform(0xFFFF);
 
   mb = mbuf_alloc(EVER_OUTWARD_MBE_POS);
@@ -1299,8 +1303,6 @@ static int _noise_session_keepalive_recv( struct noise_session *ns
   if (!ns)
     return EINVAL;
 
-  error("_noise_session_keepalive_recv\n");
-
   nonce = arch_betoh16(mbuf_read_u16(mb));
 
   if (nonce != ns->keepalive_nonce)
@@ -1308,8 +1310,6 @@ static int _noise_session_keepalive_recv( struct noise_session *ns
 
   ns->keepalive_recv = tmr_jiffies();
   ns->keepalive_diff = ns->keepalive_recv - ns->keepalive_send;
-
-  error("diff == %u\n", ns->keepalive_diff);
 
   return 0;
 }
@@ -1524,9 +1524,6 @@ int noise_session_handle_register( struct noise_session *ns
     case NOISE_SESSION_HANDLE_RECV:
       csock_flow(&ns->cs_recv, csock);
       break;
-    case NOISE_SESSION_HANDLE_EVENT:
-      csock_flow(&ns->cs_event, csock);
-      break;
     default:
       return EINVAL;
       break;
@@ -1733,7 +1730,8 @@ static void noise_engine_destructor(void *data)
   ne->idlookup = mem_deref(ne->idlookup);
 }
 
-int noise_engine_init( struct noise_engine **nenginep )
+int noise_engine_init( struct noise_engine **nenginep
+                     , struct magi_eventdriver *ed )
 {
   int err = 0;
   blake2s_ctx ctx;
@@ -1745,6 +1743,8 @@ int noise_engine_init( struct noise_engine **nenginep )
   ne = mem_zalloc(sizeof(*ne), noise_engine_destructor);
   if (!ne)
     return ENOMEM;
+
+  ne->ed = ed;
   
   blake2s( ne->hshake_chaining_key
          , NOISE_HASH_LEN
