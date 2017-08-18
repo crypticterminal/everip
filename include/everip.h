@@ -119,6 +119,33 @@ int magi_eventdriver_handler_register( struct magi_eventdriver *ed
 
 int magi_eventdriver_alloc(struct magi_eventdriver **edp);
 
+/* melchior */
+
+struct magi_melchior;
+struct magi_melchior_ticket;
+
+enum MAGI_MELCHIOR_RETURN_STATUS {
+     MAGI_MELCHIOR_RETURN_STATUS_OK = 0
+   , MAGI_MELCHIOR_RETURN_STATUS_TIMEDOUT
+   , MAGI_MELCHIOR_RETURN_STATUS_REJECTED
+};
+
+typedef void (magi_melchior_h)( enum MAGI_MELCHIOR_RETURN_STATUS status
+                              , struct odict *od_sent
+                              , struct odict *od_recv
+                              , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
+                              , uint64_t timediff
+                              , void *userdata);
+
+int magi_melchior_send( struct magi_melchior *mm
+                      , struct odict *od
+                      , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
+                      , uint64_t timeout
+                      , magi_melchior_h *callback
+                      , void *userdata );
+
+int magi_melchior_alloc(struct magi_melchior **mmp);
+
 /*
  * CSOCK
  */
