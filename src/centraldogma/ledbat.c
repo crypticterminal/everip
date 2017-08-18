@@ -339,6 +339,7 @@ int ledbat_sock_reconnect( struct ledbat_sock *lsock )
   if (lsock->sock) {
     utp_set_userdata(lsock->sock, NULL);
     utp_close( lsock->sock );
+    lsock->sock = NULL;
   }
   
   lsock->sock = utp_create_socket(lsock->ctx->utp);
@@ -471,9 +472,10 @@ static void ledbat_destructor(void *data)
 {
   struct ledbat *ledbat = data;
   tmr_cancel(&ledbat->tmr);
-  utp_context_set_userdata(ledbat->utp, NULL);
-  utp_destroy(ledbat->utp);
   list_flush(&ledbat->socks);
+  utp_check_timeouts(ledbat->utp);
+  /*utp_context_set_userdata(ledbat->utp, NULL);*/
+  utp_destroy(ledbat->utp);
 }
 
 int ledbat_alloc( struct ledbat **ledbatp )
