@@ -37,11 +37,32 @@ struct magi_melchior_ticket {
 
 };
 
+static int magi_melchior_ticket_serialize( struct magi_melchior_ticket *mmt
+                                         , struct mbuf *mb )
+{
+  int err = 0;
+  size_t mb_pos;
+  if (!mmt || !mb)
+    return EINVAL;
+
+  mb_pos = mb->pos;
+
+  err = mbuf_printf(mb, "%H", bencode_encode_odict, mmt->od_sent);
+  if (err)
+    goto out;
+
+  mbuf_set_pos(mb, mb_pos);
+
+  /* sign */
+
+
+out:
+  return err;
+}
+
 static void magi_melchior_ticket_timeout(void *data)
 {
   struct magi_melchior_ticket *mmt = data;
-
-  warning("timed-out!\n");
 
   mmt->callback( MAGI_MELCHIOR_RETURN_STATUS_TIMEDOUT
                , mmt->od_sent
@@ -62,16 +83,19 @@ static void magi_melchior_ticket_destructor(void *data)
   mmt->od_sent = mem_deref( mmt->od_sent );
   mmt->od_recv = mem_deref( mmt->od_recv );
 
+  tmr_cancel(&mmt->tmr);
 }
 
 int magi_melchior_send( struct magi_melchior *mm
                       , struct odict *od
                       , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
                       , uint64_t timeout
+                      , bool is_routable
                       , magi_melchior_h *callback
                       , void *userdata )
 {
-
+  int err = 0;
+  struct mbuf *mb = NULL;
   struct magi_melchior_ticket *mmt = NULL;
 
   if (!mm || !od || !everip_addr || !callback)
@@ -98,13 +122,27 @@ int magi_melchior_send( struct magi_melchior *mm
              , &mmt->le
              , mmt );
 
+  odict_entry_add(mmt->od_sent, "_p", ODICT_INT, (int64_t)EVERIP_VERSION_PROTOCOL);
   odict_entry_add(mmt->od_sent, "_t", ODICT_INT, mmt->ticket_id);
 
   /* sign and serialize */
 
-  /* send to subsystem */
+  mb = mbuf_outward_alloc(0);
+  if (!mb)
+    goto out;
 
-  return 0;
+  err = magi_melchior_ticket_serialize(mmt, mb);
+  if (err)
+    goto out;
+
+  /* send to subsystem */
+  debug("magi_melchior_send: [%u][%W]\n", mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));
+
+out:
+  mb = mem_deref(mb);
+  if (err)
+    mmt = mem_deref( mmt );
+  return err;
 }
 
 static void magi_melchior_destructor(void *data)

@@ -78,12 +78,9 @@ static uint64_t ledbat_callback_h(ledbat_callback_arguments *a, void *arg)
       return 0;
     }
 
-    mb = mbuf_alloc(EVER_OUTWARD_MBE_POS + a->len);
+    mb = mbuf_outward_alloc(2 + a->len);
     if (!mb)
       return 0;
-
-    mb->pos = EVER_OUTWARD_MBE_POS;
-    mb->end = EVER_OUTWARD_MBE_POS + 2 + a->len;
 
     mbuf_write_u16(mb, arch_htobe16( TYPE_BASE ));
     mbuf_write_mem(mb, a->buf, a->len);

@@ -158,6 +158,7 @@ int test_tun(void);
 int test_checksum(void);
 int test_noise(void);
 int test_everip(void);
+int test_magi(void);
 
 #ifdef __cplusplus
 extern "C" {

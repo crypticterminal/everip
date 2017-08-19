@@ -9,6 +9,8 @@ SRCS	+= centraldogma/sign.c
 
 #magi
 SRCS	+= magi/magi.c
+SRCS	+= magi/melchior.c
+SRCS	+= magi/eventdriver.c
 
 #terminal dogma
 ifeq ($(OS),darwin)
@@ -31,6 +33,11 @@ SRCS	+= misato/module.c
 SRCS	+= ritsuko/log.c
 SRCS	+= ritsuko/net.c
 SRCS	+= ritsuko/addr.c
+
+SRCS	+= ritsuko/bencode.c
+SRCS	+= ritsuko/bencode_dec.c
+SRCS	+= ritsuko/bencode_dec_od.c
+
 ifeq ($(OS),darwin)
 SRCS	+= ritsuko/net_darwin.c
 endif

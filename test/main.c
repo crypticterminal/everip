@@ -61,6 +61,7 @@ static const struct test tests[] = {
   ,TEST(test_checksum)
   ,TEST(test_noise)
   ,TEST(test_everip)
+  ,TEST(test_magi)
 };
 
 

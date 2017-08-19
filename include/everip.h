@@ -94,6 +94,68 @@ int addr_base32_decode( uint8_t* out , const uint32_t olen , const uint8_t* in ,
 int addr_base32_encode( uint8_t* out , const uint32_t olen , const uint8_t* in , const uint32_t ilen );
 
 /*
+ * BENCODE
+ */
+
+enum bencode_typ {
+  BENCODE_STRING,
+  BENCODE_INT,
+  BENCODE_NULL,
+};
+
+struct bencode_value {
+  union {
+    struct pl pl;
+    int64_t integer;
+  } v;
+  enum bencode_typ type;
+};
+
+struct bencode_handlers;
+
+typedef int (bencode_object_entry_h)(const char *name,
+          const struct bencode_value *value, void *arg);
+typedef int (bencode_array_entry_h)(unsigned idx,
+         const struct bencode_value *value, void *arg);
+typedef int (bencode_object_h)(const char *name, unsigned idx,
+          struct bencode_handlers *h);
+typedef int (bencode_array_h)(const char *name, unsigned idx,
+         struct bencode_handlers *h);
+
+struct bencode_handlers {
+  bencode_object_h *oh;
+  bencode_array_h *ah;
+  bencode_object_entry_h *oeh;
+  bencode_array_entry_h *aeh;
+  void *arg;
+};
+
+int bencode_decode(const char *str, size_t len, unsigned maxdepth,
+    bencode_object_h *oh, bencode_array_h *ah,
+    bencode_object_entry_h *oeh, bencode_array_entry_h *aeh, void *arg);
+
+int bencode_decode_odict(struct odict **op, uint32_t hash_size, const char *str,
+          size_t len, unsigned maxdepth);
+int bencode_encode_odict(struct re_printf *pf, const struct odict *o);
+
+/*
+ * MBUF (helpers)
+ */
+
+static inline struct mbuf * mbuf_outward_alloc(size_t size)
+{
+  struct mbuf *mb = mbuf_alloc(EVER_OUTWARD_MBE_POS + size);
+  if (!mb)
+    goto out;
+
+  mb->pos = EVER_OUTWARD_MBE_POS;
+  mb->end = EVER_OUTWARD_MBE_POS + size;
+
+out:
+  return mb;
+}
+
+/*
  * EVENTS
  */
 
@@ -141,6 +203,7 @@ int magi_melchior_send( struct magi_melchior *mm
                       , struct odict *od
                       , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
                       , uint64_t timeout
+                      , bool is_routable
                       , magi_melchior_h *callback
                       , void *userdata );
 

@@ -10,3 +10,4 @@ TEST_SRCS	+= main.c
 #TEST_SRCS	+= tun.c
 TEST_SRCS	+= everip.c
 TEST_SRCS	+= checksum.c
+TEST_SRCS	+= magi.c
