@@ -19,43 +19,6 @@
 #include <everip.h>
 #include "blake2s.h"
 
-#ifdef HAVE_SYS_TIME_H
-#include <sys/time.h>
-#endif
-#ifdef WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-typedef struct timeval {
-    long tv_sec;
-    long tv_usec;
-} timeval;
-
-int gettimeofday(struct timeval * tp, struct timezone * tzp)
-{
-  /*
-   * Note: some broken versions only have 8 trailing zero's, the correct epoch
-   * has 9 trailing zero's This magic number is the number of 100 nanosecond
-   * intervals since January 1, 1601 (UTC) until 00:00:00 January 1, 1970
-   */
-  static const uint64_t EPOCH = ((uint64_t) 116444736000000000ULL);
-
-  SYSTEMTIME  system_time;
-  FILETIME    file_time;
-  uint64_t    time;
-
-  GetSystemTime( &system_time );
-  SystemTimeToFileTime( &system_time, &file_time );
-  time =  ((uint64_t)file_time.dwLowDateTime )      ;
-  time += ((uint64_t)file_time.dwHighDateTime) << 32;
-
-  tp->tv_sec  = (long) ((time - EPOCH) / 10000000L);
-  tp->tv_usec = (long) (system_time.wMilliseconds * 1000);
-  return 0;
-}
-#else
-#include <time.h>
-#endif
-
 #define noise_info(...)
 
 static const uint8_t g_hshake[37] = "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s";
@@ -244,20 +207,6 @@ static void noise_session_event_run( struct noise_session *ns
   /*csock_forward(&ns->cs_event, CSOCK_TYPE_NOISE_EVENT, &event);*/
   /*csock_forward(&ns->ne->cs_event, CSOCK_TYPE_NOISE_EVENT, &event);*/
 
-}
-
-static void _tai64n_now( uint8_t output[NOISE_TIMESTAMP_LEN] )
-{
-  struct timeval now;
-
-  if (0 != gettimeofday(&now, NULL)) {
-    warning("_tai64n_now: gettimeofday() failed (%m)\n", errno);
-    return;
-  }
-
-  /* https://cr.yp.to/libtai/tai64.html */
-  *(uint64_t *)(void *)output = arch_htobe64(4611686018427387914ULL + now.tv_sec);
-  *(uint32_t *)(void *)(output + sizeof(uint64_t)) = arch_htobe32(1000 * now.tv_usec + 500);
 }
 
 void noise_si_private_key_set( struct noise_si *si
@@ -631,7 +580,7 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
 
   /* {t} */
   
-  _tai64n_now( timestamp );
+  tai64n_now( timestamp );
 
   _message_encrypt( out_encrypted_timestamp
                   , timestamp

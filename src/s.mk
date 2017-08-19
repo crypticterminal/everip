@@ -8,7 +8,7 @@ SRCS	+= centraldogma/noise.c
 SRCS	+= centraldogma/sign.c
 
 #magi
-SRCS	+= magi/magi.c
+SRCS	+= magi/core.c
 SRCS	+= magi/melchior.c
 SRCS	+= magi/eventdriver.c
 
@@ -33,6 +33,7 @@ SRCS	+= misato/module.c
 SRCS	+= ritsuko/log.c
 SRCS	+= ritsuko/net.c
 SRCS	+= ritsuko/addr.c
+SRCS	+= ritsuko/tai64.c
 
 SRCS	+= ritsuko/bencode.c
 SRCS	+= ritsuko/bencode_dec.c

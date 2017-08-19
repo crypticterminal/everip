@@ -19,6 +19,8 @@
 #include <everip.h>
 #include "test.h"
 
+#define PRIVATEKEY "355dd5874b2f0cbd45bb82c7ed61ebb1f0f9f8ca0b287efe0951cd11635aac37"
+
 static void test_magi_m_cb( enum MAGI_MELCHIOR_RETURN_STATUS status
                           , struct odict *od_sent
                           , struct odict *od_recv
@@ -37,11 +39,27 @@ int test_magi(void)
 {
   int err = 0;
   struct odict *od = NULL;
-  struct magi_melchior *mm;
+  struct magi *magi = NULL;
+  struct magi_melchior *mm = NULL;
+  struct noise_engine *ne;
   uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] = {0};
+  uint8_t prv_key[NOISE_SECRET_KEY_LEN];
+
+  str_hex(prv_key, NOISE_SECRET_KEY_LEN, PRIVATEKEY);
+
+  /* dummy noise engine */
+  err = noise_engine_init(&ne, NULL);
+  TEST_ERR(err);
+
+  noise_si_private_key_set( &ne->si, prv_key );
+  cryptosign_skpk_fromcurve25519(ne->sign_keys, prv_key);
+
+  /* core */
+  err = magi_alloc( &magi );
+  TEST_ERR(err);
 
   /* melchior */
-  err = magi_melchior_alloc(&mm);
+  err = magi_melchior_alloc(&mm, magi, ne);
   TEST_ERR(err);
 
   /* create dict */
@@ -49,6 +67,7 @@ int test_magi(void)
 
   err = magi_melchior_send( mm
                           , od
+                          , &(struct pl){.p="hello",.l=5}
                           , everip_addr
                           , 1 /* 1 ms */
                           , false /* is not routable */
@@ -62,5 +81,7 @@ int test_magi(void)
 
 out:
   mm = mem_deref(mm);
+  ne = mem_deref(ne);
+  magi = mem_deref(magi);
   return err;
 }

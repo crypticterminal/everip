@@ -49,11 +49,6 @@ extern void ge_scalarmult_base(ge_p3 *,const unsigned char *);
 extern void sc_reduce(unsigned char *);
 extern void sc_muladd(unsigned char *,const unsigned char *,const unsigned char *,const unsigned char *);
 
-inline void cryptosign_pk_fromskpk(uint8_t pk[32], uint8_t skpk[64])
-{
-  memcpy(pk, &skpk[32], 32);
-}
-
 void cryptosign_bytes(uint8_t skpk[64], uint8_t *m, size_t mlen)
 {
   ge_p3 R;
@@ -94,7 +89,7 @@ int cryptosign_bytes_verify(uint8_t pk[32], uint8_t *s, uint8_t *m, size_t mlen)
   return crypto_sign_verify_detached(s, m, mlen, pk);
 }
 
-void cryptosign_skpk_fromcurve25519(uint8_t skpk[64], uint8_t sk[32])
+void cryptosign_skpk_fromcurve25519(uint8_t skpk[64], const uint8_t sk[32])
 {
   ge_p3 A;
   memcpy(skpk, sk, 32);

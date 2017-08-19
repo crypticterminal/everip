@@ -20,11 +20,15 @@
 
 struct magi_melchior {
   struct hash *tickets;
+  struct noise_engine *ne;
+  struct magi *ctx;
 };
 
 struct magi_melchior_ticket {
   struct le le;
   struct tmr tmr;
+
+  struct magi_melchior *ctx;
 
   uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
   uint32_t ticket_id;
@@ -42,6 +46,8 @@ static int magi_melchior_ticket_serialize( struct magi_melchior_ticket *mmt
 {
   int err = 0;
   size_t mb_pos;
+  uint8_t public_sign_key[32];
+
   if (!mmt || !mb)
     return EINVAL;
 
@@ -55,6 +61,31 @@ static int magi_melchior_ticket_serialize( struct magi_melchior_ticket *mmt
 
   /* sign */
 
+  cryptosign_pk_fromskpk(public_sign_key, mmt->ctx->ne->sign_keys);
+
+  /* header = 112U */
+  /*[SIGNATURE 64U][PUBLIC_KEY 32U][TAI64N 12U][OPTIONS 4U]*/
+  mbuf_advance(mb, -112);
+  mb_pos = mb->pos;
+
+  /* wait for sig later */
+  mbuf_advance(mb, CRYPTOSIGN_SIGNATURE_LENGTH/* 64U */);
+
+  /* write public key */
+  mbuf_write_mem(mb, public_sign_key, 32);
+  
+  /* {t} */
+  tai64n_now( mbuf_buf(mb) );
+  mbuf_advance(mb, TAI64_N_LEN);
+
+  /* options -- keep blank for now */
+  mbuf_write_u32(mb, 0); 
+
+  /* go back to top */
+  mbuf_set_pos(mb, mb_pos);
+
+  /* sign out */
+  cryptosign_bytes(mmt->ctx->ne->sign_keys, mbuf_buf(mb), mbuf_get_left(mb));
 
 out:
   return err;
@@ -88,6 +119,7 @@ static void magi_melchior_ticket_destructor(void *data)
 
 int magi_melchior_send( struct magi_melchior *mm
                       , struct odict *od
+                      , struct pl *method
                       , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
                       , uint64_t timeout
                       , bool is_routable
@@ -96,14 +128,17 @@ int magi_melchior_send( struct magi_melchior *mm
 {
   int err = 0;
   struct mbuf *mb = NULL;
+  struct magi_node *mnode = NULL;
   struct magi_melchior_ticket *mmt = NULL;
 
-  if (!mm || !od || !everip_addr || !callback)
+  if (!mm || !od || !method || !everip_addr || !callback)
     return EINVAL;
 
   mmt = mem_zalloc(sizeof(*mmt), magi_melchior_ticket_destructor);
   if (!mmt)
     return ENOMEM;
+
+  mmt->ctx = mm;
 
   memcpy(mmt->everip_addr, everip_addr, EVERIP_ADDRESS_LENGTH);
 
@@ -123,8 +158,10 @@ int magi_melchior_send( struct magi_melchior *mm
              , mmt );
 
   odict_entry_add(mmt->od_sent, "_p", ODICT_INT, (int64_t)EVERIP_VERSION_PROTOCOL);
-  odict_entry_add(mmt->od_sent, "_t", ODICT_INT, mmt->ticket_id);
-
+  odict_entry_add(mmt->od_sent, "_m", ODICT_STRING, method);
+  odict_entry_add(mmt->od_sent, "_i", ODICT_INT, mmt->ticket_id);
+  odict_entry_add(mmt->od_sent, "_t", ODICT_STRING, &(struct pl){.p=(const char *)everip_addr,.l=EVERIP_ADDRESS_LENGTH});
+  
   /* sign and serialize */
 
   mb = mbuf_outward_alloc(0);
@@ -138,11 +175,68 @@ int magi_melchior_send( struct magi_melchior *mm
   /* send to subsystem */
   debug("magi_melchior_send: [%u][%W]\n", mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));
 
+  if (is_routable) {
+    error("magi_melchior_send: routable messages are not available;\n");
+  } else {
+    mnode = magi_node_lookup_by_eipaddr( mm->ctx, everip_addr );
+    if (!mnode) {
+      error("magi_melchior_send: hmm, no magi record!\n");
+      goto out;
+    }
+
+    /* port zero is for melchior */
+    magi_node_ledbat_send(mnode, mb, MAGI_LEDBAT_PORT_MELCHIOR);
+
+  }
+
 out:
   mb = mem_deref(mb);
   if (err)
     mmt = mem_deref( mmt );
   return err;
+}
+
+int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
+{
+
+  size_t pos;
+  struct odict *od;
+
+  uint8_t signature[CRYPTOSIGN_SIGNATURE_LENGTH];
+  uint8_t public_key[32];
+  uint8_t tai64n[TAI64_N_LEN];
+  uint8_t options[4];
+
+  if (mbuf_get_left(mb) < 112)
+    return ENODATA;
+
+  pos = mb->pos;
+
+  mbuf_read_mem(mb, signature, CRYPTOSIGN_SIGNATURE_LENGTH);
+  mbuf_read_mem(mb, public_key, 32);
+  mbuf_read_mem(mb, tai64n, TAI64_N_LEN);
+  mbuf_read_mem(mb, options, 4);
+
+  mbuf_set_pos(mb, pos + CRYPTOSIGN_SIGNATURE_LENGTH);
+
+  /* check signature */
+  if (cryptosign_bytes_verify( public_key
+                             , signature
+                             , mbuf_buf(mb)
+                             , mbuf_get_left(mb) )) {
+    return EBADMSG;
+  }
+
+  mbuf_set_pos(mb, pos + 112);
+
+  if (bencode_decode_odict(&od, 8, mbuf_buf(mb), mbuf_get_left(mb), 3))
+    return EBADMSG;
+
+  error("ODICT: %H\n", odict_debug, od);
+
+  od = mem_deref(od);
+
+  return 0;
 }
 
 static void magi_melchior_destructor(void *data)
@@ -152,14 +246,22 @@ static void magi_melchior_destructor(void *data)
   mm->tickets = mem_deref( mm->tickets );
 }
 
-int magi_melchior_alloc(struct magi_melchior **mmp)
+int magi_melchior_alloc( struct magi_melchior **mmp
+                       , struct magi *magi
+                       , struct noise_engine *ne )
 {
   int err = 0;
   struct magi_melchior *mm;
 
+  if (!mmp || !magi || !ne)
+    return EINVAL;
+
   mm = mem_zalloc(sizeof(*mm), magi_melchior_destructor);
   if (!mm)
     return ENOMEM;
+
+  mm->ctx = magi;
+  mm->ne = ne;
 
   hash_alloc(&mm->tickets, 16);
 

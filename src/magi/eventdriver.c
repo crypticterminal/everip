@@ -19,7 +19,7 @@
 #include <everip.h>
 
 struct magi_eventdriver {
-  struct list handlers[MAGI_EVENTDRIVER_WATCH_MAX];
+  struct list handlers[MAGI_EVENTDRIVER_WATCH_MAXIMUM];
 };
 
 struct magi_eventdriver_handler {
@@ -39,7 +39,7 @@ static inline struct list * _grab_handler( struct magi_eventdriver *ed
   if (!ed)
     return NULL;
 
-  if (handler > MAGI_EVENTDRIVER_WATCH_MAX)
+  if (handler > MAGI_EVENTDRIVER_WATCH_MAXIMUM)
     return NULL;
   else
     return &ed->handlers[handler];
@@ -100,7 +100,7 @@ int magi_eventdriver_handler_register( struct magi_eventdriver *ed
 static void magi_eventdriver_destructor(void *data)
 {
   struct magi_eventdriver *ed = data;
-  for (int i = 0; i < MAGI_EVENTDRIVER_WATCH_MAX; ++i) {
+  for (int i = 0; i < MAGI_EVENTDRIVER_WATCH_MAXIMUM; ++i) {
     list_flush( _grab_handler(ed, i) );
   }
 }
@@ -116,7 +116,7 @@ int magi_eventdriver_alloc(struct magi_eventdriver **edp)
   if (!ed)
     return ENOMEM;
 
-  for (int i = 0; i < MAGI_EVENTDRIVER_WATCH_MAX; ++i) {
+  for (int i = 0; i < MAGI_EVENTDRIVER_WATCH_MAXIMUM; ++i) {
     list_init( _grab_handler(ed, i) );
   }
 

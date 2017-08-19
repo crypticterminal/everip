@@ -25,12 +25,11 @@
 int test_everip(void)
 {
   int err = 0;
-  uint8_t prv[NOISE_PUBLIC_KEY_LEN];
+  uint8_t prv[NOISE_SECRET_KEY_LEN];
+
+  str_hex(prv, NOISE_SECRET_KEY_LEN, PRIVATEKEY);
 
   warning("NOTICE: It is okay if the tunnel fails for this test;\n");
-
-  str_hex(prv, 32, PRIVATEKEY);
-
   err = everip_init(prv, 1988);
   TEST_ERR(err);
 

@@ -44,6 +44,10 @@ static inline bool everip_version_compat(uint32_t a, uint32_t b) {
 #define EVER_OUTWARD_MBE_POS (512)
 #define EVER_OUTWARD_MBE_LENGTH (1500)
 
+#define TAI64_N_LEN 12U
+
+ASSERT_COMPILETIME(TAI64_N_LEN == (sizeof(uint64_t) + sizeof(uint32_t)));
+
 #define container_of(p, t, m) \
     (__extension__ ({ \
         const __typeof__(((t*)0)->m)*__mp = (p); \
@@ -51,7 +55,34 @@ static inline bool everip_version_compat(uint32_t a, uint32_t b) {
     }))
 
 struct treeoflife;
+struct noise_engine;
 struct noise_session;
+
+struct ledbat_sock;
+
+/* ENUMS */
+
+enum noise_lengths {
+    NOISE_PUBLIC_KEY_LEN = 32U
+  , NOISE_SECRET_KEY_LEN = 32U
+  , NOISE_SYMMETRIC_KEY_LEN = crypto_aead_chacha20poly1305_IETF_KEYBYTES
+  , NOISE_TIMESTAMP_LEN = TAI64_N_LEN
+  , NOISE_AUTHTAG_LEN = crypto_aead_chacha20poly1305_IETF_ABYTES
+  , NOICE_NONCE_LEN = crypto_aead_chacha20poly1305_IETF_NPUBBYTES
+  , NOISE_HASH_LEN = 32U
+};
+
+enum NOISE_SESSION_HANDLE {
+    NOISE_SESSION_HANDLE_RECV = 0
+  , NOISE_SESSION_HANDLE_EVENT = 1
+};
+
+enum NOISE_ENGINE_RECIEVE {
+    NOISE_ENGINE_RECIEVE_EBADMSG = -1
+  , NOISE_ENGINE_RECIEVE_OK = 0
+  , NOISE_ENGINE_RECIEVE_EINVAL = 1
+  , NOISE_ENGINE_RECIEVE_DECRYPTED = 2
+};
 
 /*
  * Address
@@ -92,6 +123,12 @@ uint32_t addr_prefix(struct addr *addr);
 
 int addr_base32_decode( uint8_t* out , const uint32_t olen , const uint8_t* in , const uint32_t ilen );
 int addr_base32_encode( uint8_t* out , const uint32_t olen , const uint8_t* in , const uint32_t ilen );
+
+/*
+ * TAI64
+ */
+
+void tai64n_now( uint8_t output[TAI64_N_LEN] );
 
 /*
  * BENCODE
@@ -156,7 +193,7 @@ out:
 }
 
 /*
- * EVENTS
+ * MAGI
  */
 
 struct magi_eventdriver;
@@ -165,7 +202,12 @@ struct magi_eventdriver_handler;
 enum MAGI_EVENTDRIVER_WATCH {
      MAGI_EVENTDRIVER_WATCH_NOISE  = 0
    , MAGI_EVENTDRIVER_WATCH_LEDBAT
-   , MAGI_EVENTDRIVER_WATCH_MAX /* must be last! */
+   , MAGI_EVENTDRIVER_WATCH_MAXIMUM /* must be last! */
+};
+
+enum MAGI_LEDBAT_PORT {
+     MAGI_LEDBAT_PORT_MELCHIOR  = 0
+   , MAGI_LEDBAT_PORT_MAXIMUM /* must be last! */
 };
 
 typedef int (magi_eventdriver_h)(enum MAGI_EVENTDRIVER_WATCH type, void *data, void *arg);
@@ -180,6 +222,36 @@ int magi_eventdriver_handler_register( struct magi_eventdriver *ed
                                      , void *userdata );
 
 int magi_eventdriver_alloc(struct magi_eventdriver **edp);
+
+/* core */
+
+struct magi;
+struct magi_node;
+
+int magi_node_ledbat_sock_set( struct magi_node *mnode
+                                       , struct ledbat_sock *lsock );
+
+struct ledbat_sock *
+magi_node_ledbat_sock_get( struct magi_node *mnode );
+
+int magi_node_ledbat_send( struct magi_node *mnode
+                         , struct mbuf *mb
+                         , uint16_t port );
+
+int magi_node_ledbat_recv( struct magi_node *mnode, struct mbuf *mb );
+
+int magi_node_everipaddr_copy( struct magi_node *mnode
+                             , uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
+
+struct magi_node *
+magi_node_lookup_by_eipaddr( struct magi *magi
+                           , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
+
+struct magi_node *
+magi_node_lookup_or_create( struct magi *magi
+                          , const uint8_t public_key[NOISE_PUBLIC_KEY_LEN] );
+
+int magi_alloc( struct magi **mbp );
 
 /* melchior */
 
@@ -201,13 +273,18 @@ typedef void (magi_melchior_h)( enum MAGI_MELCHIOR_RETURN_STATUS status
 
 int magi_melchior_send( struct magi_melchior *mm
                       , struct odict *od
+                      , struct pl *method
                       , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
                       , uint64_t timeout
                       , bool is_routable
                       , magi_melchior_h *callback
                       , void *userdata );
 
-int magi_melchior_alloc(struct magi_melchior **mmp);
+int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb);
+
+int magi_melchior_alloc( struct magi_melchior **mmp
+                       , struct magi *magi
+                       , struct noise_engine *ne );
 
 /*
  * CSOCK
@@ -306,32 +383,10 @@ typedef void (noise_session_recv_h)(struct noise_session *s, struct mbuf *mb, vo
 
 typedef void (noise_session_event_h)(struct noise_session *s, enum NOISE_SESSION_EVENT event, void *arg);
 
-enum noise_lengths {
-    NOISE_PUBLIC_KEY_LEN = 32U
-  , NOISE_SECRET_KEY_LEN = 32U
-  , NOISE_SYMMETRIC_KEY_LEN = crypto_aead_chacha20poly1305_IETF_KEYBYTES
-  , NOISE_TIMESTAMP_LEN = sizeof(uint64_t) + sizeof(uint32_t)
-  , NOISE_AUTHTAG_LEN = crypto_aead_chacha20poly1305_IETF_ABYTES
-  , NOICE_NONCE_LEN = crypto_aead_chacha20poly1305_IETF_NPUBBYTES
-  , NOISE_HASH_LEN = 32U
-};
-
-enum NOISE_SESSION_HANDLE {
-    NOISE_SESSION_HANDLE_RECV = 0
-  , NOISE_SESSION_HANDLE_EVENT = 1
-};
-
-enum NOISE_ENGINE_RECIEVE {
-    NOISE_ENGINE_RECIEVE_EBADMSG = -1
-  , NOISE_ENGINE_RECIEVE_OK = 0
-  , NOISE_ENGINE_RECIEVE_EINVAL = 1
-  , NOISE_ENGINE_RECIEVE_DECRYPTED = 2
-};
-
 struct noise_si {
   bool has_identity;
   uint8_t public[NOISE_PUBLIC_KEY_LEN];
-  uint8_t private[NOISE_PUBLIC_KEY_LEN];
+  uint8_t private[NOISE_SECRET_KEY_LEN];
 };
 
 struct noise_engine {
@@ -339,6 +394,7 @@ struct noise_engine {
   uint8_t hshake_chaining_key[NOISE_HASH_LEN];
 
   struct noise_si si;
+  uint8_t sign_keys[NOISE_PUBLIC_KEY_LEN+NOISE_SECRET_KEY_LEN];
 
   struct list sessions_all;
   struct hash *idlookup;
@@ -418,6 +474,22 @@ int noise_engine_publickey_copy( struct noise_engine *ne
 int noise_engine_init( struct noise_engine **nenginep, struct magi_eventdriver *ed);
 
 int noise_engine_test_counter(void);
+
+/*
+ * Crypto Sign
+ */
+
+#define CRYPTOSIGN_SIGNATURE_LENGTH crypto_sign_ed25519_BYTES
+ASSERT_COMPILETIME(CRYPTOSIGN_SIGNATURE_LENGTH == 64U);
+
+static inline void cryptosign_pk_fromskpk(uint8_t pk[32], const uint8_t skpk[64])
+{
+  memcpy(pk, &skpk[32], 32);
+}
+
+void cryptosign_skpk_fromcurve25519(uint8_t skpk[64], const uint8_t sk[32]);
+int cryptosign_bytes_verify(uint8_t pk[32], uint8_t *s, uint8_t *m, size_t mlen);
+void cryptosign_bytes(uint8_t skpk[64], uint8_t *m, size_t mlen);
 
 /*
  * Conduits
@@ -600,6 +672,8 @@ typedef struct {
 
 typedef uint64_t ledbat_callback_t(ledbat_callback_arguments *a, void *userdata);
 
+int ledbat_sock_send(struct ledbat_sock *lsock, struct mbuf *mb);
+
 int ledbat_sock_connect( struct ledbat_sock *lsock
                        , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
 
@@ -625,32 +699,6 @@ int ledbat_process_incoming( struct ledbat *l
                            , struct mbuf *mb );
 
 int ledbat_alloc( struct ledbat **ledbatp );
-
-/*
- * MAGI
- */
-
-struct magi;
-struct magi_node;
-
-int magi_node_ledbat_sock_set( struct magi_node *mnode
-                             , struct ledbat_sock *lsock );
-
-struct ledbat_sock *
-magi_node_ledbat_sock_get( struct magi_node *mnode );
-
-int magi_node_everipaddr_copy( struct magi_node *mnode
-                             , uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
-
-struct magi_node *
-magi_node_lookup_by_eipaddr( struct magi *magi
-                           , uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
-
-struct magi_node *
-magi_node_lookup_or_create( struct magi *magi
-                          , uint8_t public_key[NOISE_PUBLIC_KEY_LEN] );
-
-int magi_alloc(struct magi **magip);
 
 /*
  * AT Field
@@ -969,6 +1017,7 @@ void everip_close(void);
 
 struct network *everip_network(void);
 struct magi *everip_magi(void);
+struct magi_melchior *everip_magi_melchior(void);
 struct ledbat *everip_ledbat(void);
 struct commands *everip_commands(void);
 struct noise_engine *everip_noise(void);
