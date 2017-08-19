@@ -63,7 +63,7 @@ static int _sendto_outside(struct conduit_peer *peer, struct mbuf *mb, void *arg
     return EINVAL;
 
   if (peer->flags & CONDUIT_PEER_FLAG_BCAST) {
-    debug("Broadcasting! [%W]\n", mbuf_buf(mb), mbuf_get_left(mb));
+    /*debug("Broadcasting! [%W]\n", mbuf_buf(mb), mbuf_get_left(mb));*/
     (void)udp_send(udp_c->us, &udp_c->group, mb);
   } else {
     up = container_of(peer, struct udp_peer, cp);
@@ -172,9 +172,9 @@ static void recv_handler_bcast(const struct sa *src, struct mbuf *mb, void *arg)
 {
   struct udp_csock *udp_c = arg;
 
-  debug( "BCAST: got %zu bytes of UDP data from %J\n"
+  /*debug( "BCAST: got %zu bytes of UDP data from %J\n"
        , mbuf_get_left(mb)
-       , src);
+       , src);*/
   _recv_handler(udp_c, src, mb, true);
 }
 
