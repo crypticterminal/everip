@@ -114,12 +114,13 @@ static void magi_melchior_ticket_timeout(void *data)
 {
   struct magi_melchior_ticket *mmt = data;
 
-  mmt->callback( MAGI_MELCHIOR_RETURN_STATUS_TIMEDOUT
-               , mmt->od_sent
-               , NULL
-               , mmt->everip_addr
-               , 0
-               , mmt->userdata );
+  if (mmt->callback)
+    mmt->callback( MAGI_MELCHIOR_RETURN_STATUS_TIMEDOUT
+                 , mmt->od_sent
+                 , NULL
+                 , mmt->everip_addr
+                 , 0
+                 , mmt->userdata );
 
   mem_deref(mmt);
 }
@@ -199,7 +200,7 @@ int magi_melchior_send( struct magi_melchior *mm
   int err = 0;
   struct magi_melchior_ticket *mmt = NULL;
 
-  if (!mm || !od || !method || !everip_addr || !callback)
+  if (!mm || !od || !method || !everip_addr)
     return EINVAL;
 
   mmt = mem_zalloc(sizeof(*mmt), magi_melchior_ticket_destructor);
@@ -214,8 +215,10 @@ int magi_melchior_send( struct magi_melchior *mm
 
   mmt->od_sent = mem_ref(od);
 
-  mmt->callback = callback;
-  mmt->userdata = userdata;
+  if (callback) {
+    mmt->callback = callback;
+    mmt->userdata = userdata;    
+  }
 
   /* assign ticket id */
   mmt->ticket_id = randombytes_uniform(UINT32_MAX);
@@ -286,13 +289,13 @@ static int magi_melchior_command_res_or_err( struct magi_melchior_rpc *rpc
     err = EINVAL;
     goto out;
   }
-
-  mmt->callback( status
-               , mmt->od_sent
-               , rpc->in
-               , rpc->everip_addr
-               , tmr_jiffies() - mmt->sent_jiffies
-               , mmt->userdata );
+  if (mmt->callback)
+    mmt->callback( status
+                 , mmt->od_sent
+                 , rpc->in
+                 , rpc->everip_addr
+                 , tmr_jiffies() - mmt->sent_jiffies
+                 , mmt->userdata );
 
   mmt = mem_deref( mmt );
 
@@ -428,9 +431,9 @@ int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
         goto out;
 
       mmh = list_ledata(hash_lookup( mm->handlers
-                                   , *(uint32_t *)ns_pre.p
+                                   , *(uint32_t *)(void *)ns_pre.p
                                    , _magi_melchior_handle_lookup
-                                   , ns_pre.p));
+                                   , (void *)ns_pre.p));
       if (!mmh) {
         goto out;
       }
