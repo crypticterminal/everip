@@ -22,6 +22,12 @@ struct treeoflife_csock {
   struct conduit *conduit;
   struct list peers;
   struct hash *peers_addr;
+#if 0
+
+  parents
+  children
+
+#endif
 };
 
 static struct treeoflife_csock *g_tol = NULL;
@@ -29,8 +35,6 @@ static struct treeoflife_csock *g_tol = NULL;
 static bool _peer_debug(struct le *le, void *arg)
 {
   struct re_printf *pf = arg;
-/*  struct udp_peer *up = le->data;
-  re_hprintf(pf, "%J %H\n", &up->sa, conduit_peer_debug, &up->cp);*/
   return false;
 }
 
@@ -41,15 +45,13 @@ static int _conduit_debug(struct re_printf *pf, void *arg)
 
   re_hprintf(pf, " {Tree of Life has no Peers}\n");
 
-  /*hash_apply(tol_c->peers, _peer_debug, pf);*/
-
   return err;
 }
 
 static int _peer_create( struct conduit_peer **peerp
                        , struct pl *key
                        , struct pl *host
-                       , void *arg)
+                       , void *arg )
 {
 
   (void)key;
@@ -57,6 +59,31 @@ static int _peer_create( struct conduit_peer **peerp
   (void)arg;
 
   *peerp = NULL;
+
+  return 0;
+}
+
+static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
+                               , void *data
+                               , void *arg )
+{
+  struct magi_e2e_event *event = data;
+  struct treeoflife_csock *tol_c = arg;
+
+  if (!tol_c || !event || type != MAGI_EVENTDRIVER_WATCH_E2E)
+    return 0;
+
+  switch (event->status) {
+    case MAGI_NODE_STATUS_OFFLINE:
+    case MAGI_NODE_STATUS_SEARCHING:
+      debug("TREEOFLIFE: node [%W] has gone offline!\n", event->everip_addr, EVERIP_ADDRESS_LENGTH);
+      break;
+    case MAGI_NODE_STATUS_OPERATIONAL:
+      debug("TREEOFLIFE: node [%W] is now operational!\n", event->everip_addr, EVERIP_ADDRESS_LENGTH);
+      break;
+    default:
+      break;
+  }
 
   return 0;
 }
@@ -70,6 +97,7 @@ static void treeoflife_destructor(void *data)
 
 static int module_init(void)
 {
+  int err = 0;
   struct conduit *conduit = NULL;
 
   g_tol = mem_zalloc(sizeof(*g_tol), treeoflife_destructor);
@@ -96,9 +124,23 @@ static int module_init(void)
                                 , _conduit_debug
                                 , g_tol );
 
+
+  err = magi_eventdriver_handler_register( everip_eventdriver()
+                                         , MAGI_EVENTDRIVER_WATCH_E2E
+                                         , magi_event_watcher_h
+                                         , g_tol );
+  if (err) {
+    error("treeoflife: magi_eventdriver_handler_register\n");
+    goto out;
+  }
+
   g_tol->conduit = conduit;
 
-  return 0;
+out:
+  if (err) {
+    g_tol = mem_deref(g_tol);
+  }
+  return err;
 }
 
 

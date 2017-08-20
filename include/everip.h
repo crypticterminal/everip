@@ -196,11 +196,24 @@ out:
  * MAGI
  */
 
+struct magi;
+struct magi_node;
 struct magi_eventdriver;
 struct magi_eventdriver_handler;
 
+struct magi_melchior;
+struct magi_melchior_ticket;
+
+enum MAGI_NODE_STATUS {
+     MAGI_NODE_STATUS_OFFLINE = 0
+   , MAGI_NODE_STATUS_SEARCHING
+   , MAGI_NODE_STATUS_CONNECTED
+   , MAGI_NODE_STATUS_OPERATIONAL
+};
+
 enum MAGI_EVENTDRIVER_WATCH {
-     MAGI_EVENTDRIVER_WATCH_NOISE  = 0
+     MAGI_EVENTDRIVER_WATCH_E2E = 0
+   , MAGI_EVENTDRIVER_WATCH_NOISE
    , MAGI_EVENTDRIVER_WATCH_LEDBAT
    , MAGI_EVENTDRIVER_WATCH_MAXIMUM /* must be last! */
 };
@@ -210,7 +223,34 @@ enum MAGI_LEDBAT_PORT {
    , MAGI_LEDBAT_PORT_MAXIMUM /* must be last! */
 };
 
+enum MAGI_MELCHIOR_RETURN_STATUS {
+     MAGI_MELCHIOR_RETURN_STATUS_OK = 0
+   , MAGI_MELCHIOR_RETURN_STATUS_ERR
+   , MAGI_MELCHIOR_RETURN_STATUS_TIMEDOUT
+};
+
 typedef int (magi_eventdriver_h)(enum MAGI_EVENTDRIVER_WATCH type, void *data, void *arg);
+
+typedef void (magi_melchior_h)( enum MAGI_MELCHIOR_RETURN_STATUS status
+                              , struct odict *od_sent
+                              , struct odict *od_recv
+                              , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
+                              , uint64_t timediff
+                              , void *userdata);
+
+struct magi_melchior_rpc {
+  struct odict *in;
+  struct odict *out;
+  const uint8_t *everip_addr;
+
+  /* options */
+  bool is_routable;
+};
+
+struct magi_e2e_event {
+  enum MAGI_NODE_STATUS status;
+  const uint8_t *everip_addr;
+};
 
 int magi_eventdriver_handler_run( struct magi_eventdriver *ed
                                 , enum MAGI_EVENTDRIVER_WATCH type
@@ -224,9 +264,6 @@ int magi_eventdriver_handler_register( struct magi_eventdriver *ed
 int magi_eventdriver_alloc(struct magi_eventdriver **edp);
 
 /* core */
-
-struct magi;
-struct magi_node;
 
 int magi_node_ledbat_sock_set( struct magi_node *mnode
                                        , struct ledbat_sock *lsock );
@@ -251,34 +288,9 @@ struct magi_node *
 magi_node_lookup_or_create( struct magi *magi
                           , const uint8_t public_key[NOISE_PUBLIC_KEY_LEN] );
 
-int magi_alloc( struct magi **mbp );
+int magi_alloc(struct magi **magip, struct magi_eventdriver *med);
 
 /* melchior */
-
-struct magi_melchior;
-struct magi_melchior_ticket;
-
-enum MAGI_MELCHIOR_RETURN_STATUS {
-     MAGI_MELCHIOR_RETURN_STATUS_OK = 0
-   , MAGI_MELCHIOR_RETURN_STATUS_ERR
-   , MAGI_MELCHIOR_RETURN_STATUS_TIMEDOUT
-};
-
-struct magi_melchior_rpc {
-  struct odict *in;
-  struct odict *out;
-  const uint8_t *everip_addr;
-
-  /* options */
-  bool is_routable;
-};
-
-typedef void (magi_melchior_h)( enum MAGI_MELCHIOR_RETURN_STATUS status
-                              , struct odict *od_sent
-                              , struct odict *od_recv
-                              , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
-                              , uint64_t timediff
-                              , void *userdata);
 
 int magi_melchior_send( struct magi_melchior *mm
                       , struct odict *od
@@ -1027,6 +1039,7 @@ void everip_close(void);
 struct network *everip_network(void);
 struct magi *everip_magi(void);
 struct magi_melchior *everip_magi_melchior(void);
+struct magi_eventdriver *everip_eventdriver(void);
 struct ledbat *everip_ledbat(void);
 struct commands *everip_commands(void);
 struct noise_engine *everip_noise(void);

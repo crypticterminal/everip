@@ -55,7 +55,7 @@ int test_magi(void)
   cryptosign_skpk_fromcurve25519(ne->sign_keys, prv_key);
 
   /* core */
-  err = magi_alloc( &magi );
+  err = magi_alloc( &magi, NULL);
   TEST_ERR(err);
 
   /* melchior */

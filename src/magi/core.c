@@ -28,6 +28,8 @@ struct magi {
   struct hash *idx_addr;
 
   struct tmr maintenance;
+
+  struct magi_eventdriver *ed;
 };
 
 struct magi_node {
@@ -372,7 +374,20 @@ static void magi_maintenance_hello_cb( enum MAGI_MELCHIOR_RETURN_STATUS status
                                      , uint64_t timediff
                                      , void *userdata)
 {
+  struct magi_e2e_event event;
+  struct magi_node *mnode = userdata;
   debug("magi_maintenance_hello_cb\n");
+
+  if (status != MAGI_MELCHIOR_RETURN_STATUS_OK)
+    return; /* ignore for now */
+
+  event.status = MAGI_NODE_STATUS_OPERATIONAL;
+  event.everip_addr = everip_addr;
+
+  magi_eventdriver_handler_run( mnode->ctx->ed
+                              , MAGI_EVENTDRIVER_WATCH_E2E
+                              , &event );
+
 }
 
 static void magi_maintenance_cb(void *data)
@@ -411,7 +426,7 @@ static void magi_maintenance_cb(void *data)
                               , 5000
                               , false /* is not routable */
                               , magi_maintenance_hello_cb
-                              , &err );
+                              , mnode );
 
       od = mem_deref(od);
       mnode->last_hello = now;
@@ -432,10 +447,13 @@ static void magi_destructor(void *data)
   tmr_cancel(&magi->maintenance);
 }
 
-int magi_alloc(struct magi **magip)
+int magi_alloc(struct magi **magip, struct magi_eventdriver *med)
 {
   int err = 0;
   struct magi *magi;
+
+  if (!magip || !med)
+    return EINVAL;
 
   magi = mem_zalloc(sizeof(*magi), magi_destructor);
   if (!magi)
@@ -448,6 +466,8 @@ int magi_alloc(struct magi **magip)
   err = hash_alloc(&magi->idx_addr, 16);
   if (err)
     goto out;
+
+  magi->ed = med;
 
   tmr_start(&magi->maintenance, 1000, magi_maintenance_cb, magi);
 

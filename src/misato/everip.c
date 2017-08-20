@@ -374,7 +374,7 @@ int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
     return err;
   }
 
-  err = magi_alloc( &everip.magi );
+  err = magi_alloc( &everip.magi, everip.eventdriver);
   if (err) {
     error("everip_init: magi_alloc\n");
     return err;
@@ -507,6 +507,11 @@ struct magi *everip_magi(void)
 struct magi_melchior *everip_magi_melchior(void)
 {
     return everip.magi_melchior;
+}
+
+struct magi_eventdriver *everip_eventdriver(void)
+{
+    return everip.eventdriver;
 }
 
 struct ledbat *everip_ledbat(void)
