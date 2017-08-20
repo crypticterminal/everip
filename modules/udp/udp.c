@@ -39,7 +39,7 @@ static bool _peer_debug(struct le *le, void *arg)
 {
   struct re_printf *pf = arg;
   struct udp_peer *up = le->data;
-  re_hprintf(pf, "%J %H\n", &up->sa, conduit_peer_debug, &up->cp);
+  re_hprintf(pf, "→ %J %H\n", &up->sa, conduit_peer_debug, &up->cp);
   return false;
 }
 
@@ -303,8 +303,8 @@ static int module_init(void)
   conduits_register( &udp_c->conduit
                    , everip_conduits()
                    , CONDUIT_FLAG_BCAST
-                   , "UDP"
-                   , "UDP/IP Driver Conduit"
+                   , "UDP4"
+                   , "UDP/IPv4 Driver Conduit"
                    );
 
   if (!udp_c->conduit)
