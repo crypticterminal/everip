@@ -21,8 +21,19 @@
 #define TOL_ZONE_COUNT 1
 #define TOL_ROUTE_LENGTH 16 /* 128 bytes */
 
+#define TOL_DHT_TIMEOUT_MS 5000
+
 struct treeoflife_peer;
 struct treeoflife_csock;
+
+struct treeoflife_dhti {
+  struct le le;
+  uint8_t binlen;
+  uint8_t binrep[TOL_ROUTE_LENGTH];
+  uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
+
+  struct tmr tmr;
+};
 
 struct treeoflife_zone {
   uint8_t root[EVERIP_ADDRESS_LENGTH];
@@ -33,6 +44,8 @@ struct treeoflife_zone {
   uint8_t binrep[TOL_ROUTE_LENGTH];
 
   struct list nodes_all;
+
+  struct list dhti_all;
 };
 
 struct treeoflife_peer {
@@ -71,9 +84,72 @@ struct treeoflife_csock {
 
 static struct treeoflife_csock *g_tol = NULL;
 
+static void treeoflife_dhti_destructor(void *data)
+{
+  struct treeoflife_dhti *dhti = data;
+  list_unlink(&dhti->le);
+  tmr_cancel(&dhti->tmr);
+}
+
+static void treeoflife_dhti_tmr_cb(void *data)
+{
+  struct treeoflife_dhti *dhti = data;
+  dhti = mem_deref( dhti );
+}
+
+static
+int treeoflife_peer_dht_notify_send( const uint8_t everip_forward[EVERIP_ADDRESS_LENGTH]
+                                   , const uint8_t everip_record[EVERIP_ADDRESS_LENGTH]
+                                   , uint16_t zoneid
+                                   , uint8_t root[EVERIP_ADDRESS_LENGTH]
+                                   , uint8_t binrep[TOL_ROUTE_LENGTH]
+                                   , uint8_t binlen )
+{
+  struct odict *od_dht = NULL;
+
+  odict_alloc(&od_dht, 8);
+
+  odict_entry_add( od_dht, "mode", ODICT_STRING, &(struct pl)PL("notify"));
+
+  odict_entry_add( od_dht, "zoneid", ODICT_INT, zoneid);
+
+  odict_entry_add( od_dht
+                 , "everip"
+                 , ODICT_STRING
+                 , &(struct pl){ .p=(const char *)everip_record
+                               , .l=EVERIP_ADDRESS_LENGTH});
+
+  odict_entry_add( od_dht
+                 , "root"
+                 , ODICT_STRING
+                 , &(struct pl){ .p=(const char *)root
+                               , .l=EVERIP_ADDRESS_LENGTH});
+
+  odict_entry_add( od_dht
+                 , "br"
+                 , ODICT_STRING
+                 , &(struct pl){ .p=(const char *)binrep
+                               , .l=TOL_ROUTE_LENGTH});
+
+  odict_entry_add( od_dht, "bl", ODICT_INT, binlen);
+
+  magi_melchior_send( everip_magi_melchior()
+                    , od_dht
+                    , &(struct pl)PL("tree.dht")
+                    , everip_forward
+                    , 1 /* don't mind if we timeout soon */
+                    , false /* is not routable */
+                    , NULL /* do not expect reply */
+                    , NULL );
+
+  od_dht = mem_deref( od_dht );
+
+  return 0;
+}
+
 static
 int treeoflife_everip_for_route( struct treeoflife_csock *tol_c
-                               , uint8_t route[ROUTE_LENGTH]
+                               , uint8_t route[TOL_ROUTE_LENGTH]
                                , uint8_t everip_addr[EVERIP_ADDRESS_LENGTH])
 {
   int places;
@@ -98,7 +174,7 @@ int treeoflife_everip_for_route( struct treeoflife_csock *tol_c
       if (!peer->is_onehop || !peer->z[i].binlen)
         continue;
       temp_diff = stack_linf_diff(route, peer->z[i].binrep, &places);
-      if (temp_diff == 0 && !memcmp(route, peer->z[i].binrep, ROUTE_LENGTH)) {
+      if (temp_diff == 0 && !memcmp(route, peer->z[i].binrep, TOL_ROUTE_LENGTH)) {
         memcpy(everip_addr, peer->cp.everip_addr, EVERIP_ADDRESS_LENGTH);
         return 0;
       }
@@ -169,7 +245,7 @@ static int treeoflife_peer_send_aschild( uint16_t zoneid
                  , "parent_br"
                  , ODICT_STRING
                  , &(struct pl){ .p=(const char *)zone->binrep
-                               , .l=ROUTE_LENGTH});
+                               , .l=TOL_ROUTE_LENGTH});
 
   odict_entry_add( od, "parent_bl", ODICT_INT, zone->binlen);
 
@@ -179,7 +255,7 @@ static int treeoflife_peer_send_aschild( uint16_t zoneid
     peer->z[zoneid].child_id = treeoflife_get_childid(peer->ctx);
   }
 
-  memcpy(peer->z[zoneid].binrep, zone->binrep, ROUTE_LENGTH);
+  memcpy(peer->z[zoneid].binrep, zone->binrep, TOL_ROUTE_LENGTH);
   peer->z[zoneid].binlen = stack_layer_add( peer->z[zoneid].binrep
                                           , peer->z[zoneid].child_id );
 
@@ -187,7 +263,7 @@ static int treeoflife_peer_send_aschild( uint16_t zoneid
                  , "child_br"
                  , ODICT_STRING
                  , &(struct pl){ .p=(const char *)peer->z[zoneid].binrep
-                               , .l=ROUTE_LENGTH});
+                               , .l=TOL_ROUTE_LENGTH});
 
   odict_entry_add( od, "child_bl", ODICT_INT, peer->z[zoneid].binlen);
 
@@ -246,7 +322,7 @@ static int treeoflife_peer_send_update( uint16_t zoneid
                  , "br"
                  , ODICT_STRING
                  , &(struct pl){ .p=(const char *)zone->binrep
-                               , .l=ROUTE_LENGTH});
+                               , .l=TOL_ROUTE_LENGTH});
 
   odict_entry_add( od, "bl", ODICT_INT, zone->binlen);
 
@@ -346,6 +422,7 @@ static int _conduit_debug(struct re_printf *pf, void *arg)
   int err = 0;
   struct le *le;
   const struct treeoflife_zone *zone;
+  struct treeoflife_dhti *dhti = NULL;
   struct treeoflife_peer *peer = NULL;
   struct treeoflife_csock *tol_c = arg;
 
@@ -374,6 +451,13 @@ static int _conduit_debug(struct re_printf *pf, void *arg)
         continue;
       err |= re_hprintf(pf, "→ ZONE[%i][LOCAL:%W][%u@%H]\n", i, peer->cp.everip_addr, EVERIP_ADDRESS_LENGTH, peer->z[i].binlen, stack_debug, peer->z[i].binrep);
     }
+
+    /* dhti */
+    LIST_FOREACH(&zone->dhti_all, le) {
+      dhti = le->data;
+      err |= re_hprintf(pf, "→ ZONE[%i][DHASH:%W][%u@%H][LEFT:%u]\n", i, dhti->everip_addr, EVERIP_ADDRESS_LENGTH, dhti->binlen, stack_debug, dhti->binrep, tmr_get_expire(&dhti->tmr));
+    }
+
 
   }
 
@@ -405,6 +489,8 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
   uint16_t tmp_zoneid;
   uint8_t *tmp_rootp;
 
+  uint8_t *tmp_everip_record;
+
   uint8_t *tmp_br;  
   uint16_t tmp_bl;
 
@@ -431,6 +517,7 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
   tmp_zoneid = ode->u.integer;
 
   if (tmp_zoneid >= TOL_ZONE_COUNT) {
+    err = EPROTO;
     goto out;
   }
 
@@ -438,19 +525,37 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
 
   ode = odict_lookup(rpc->in, "root");
   if (!ode || ode->type != ODICT_STRING) {
+    err = EPROTO;
     goto out;
   }
 
   /* root must be same as everip address */
   if (ode->u.pl.l != EVERIP_ADDRESS_LENGTH) {
+    err = EPROTO;
     goto out;
   } 
 
   tmp_rootp = (uint8_t *)ode->u.pl.p;
 
   /* if we are not the same root on the same zone, ignore! */
-  if (memcmp(zone->root, tmp_rootp, EVERIP_ADDRESS_LENGTH))
+  if (memcmp(zone->root, tmp_rootp, EVERIP_ADDRESS_LENGTH)) {
+    err = EPROTO;
     goto out;
+  }
+
+  ode = odict_lookup(rpc->in, "everip");
+  if (!ode || ode->type != ODICT_STRING) {
+    err = EPROTO;
+    goto out;
+  }
+
+  /* root must be same as everip address */
+  if (ode->u.pl.l != EVERIP_ADDRESS_LENGTH) {
+    err = EPROTO;
+    goto out;
+  } 
+
+  tmp_everip_record = (uint8_t *)ode->u.pl.p;
 
   ode = odict_lookup(rpc->in, "mode");
   if (!ode || ode->type != ODICT_STRING) {
@@ -458,6 +563,7 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
     goto out;
   }
 
+  /* mode switch */
   switch (ode->u.pl.l) {
     case 6:
       /* notify */
@@ -483,6 +589,81 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
         }
 
         tmp_bl = (uint16_t)ode->u.integer;
+
+        /* okay, save it here */
+        {
+          struct le *le;
+          bool dhti_already_exists = false;
+          struct treeoflife_dhti *dhti;
+
+          LIST_FOREACH(&zone->dhti_all, le) {
+            dhti = le->data;
+            if (!memcmp(dhti->everip_addr, tmp_everip_record, EVERIP_ADDRESS_LENGTH)) {
+              dhti_already_exists = true;
+              break;
+            }
+          }
+
+          if (!dhti_already_exists) {
+            /* create dhti here */
+            dhti = mem_zalloc(sizeof(*dhti), treeoflife_dhti_destructor);
+            if (!dhti) {
+              err = ENOMEM;
+              goto out;
+            }
+            memcpy(dhti->everip_addr, tmp_everip_record, EVERIP_ADDRESS_LENGTH);
+            list_append(&zone->dhti_all, &dhti->le, dhti);
+          }
+
+          /* update binrep */
+          dhti->binlen = tmp_bl;
+          memcpy(dhti->binrep, tmp_br, TOL_ROUTE_LENGTH);
+
+          /* update timer here */
+          tmr_start(&dhti->tmr, TOL_DHT_TIMEOUT_MS, treeoflife_dhti_tmr_cb, dhti);
+        }
+
+        /* forward! */
+        {
+          struct le *le;
+          struct treeoflife_peer *peer = NULL;
+
+          if (zone->parent) {
+            /* easy path */
+
+            if (!memcmp( zone->parent->cp.everip_addr
+                       , rpc->everip_addr
+                       , EVERIP_ADDRESS_LENGTH)) {
+              /* we already came from there! */
+              goto out;
+            }
+
+            (void)treeoflife_peer_dht_notify_send( zone->parent->cp.everip_addr
+                                                 , tmp_everip_record
+                                                 , tmp_zoneid
+                                                 , tmp_rootp
+                                                 , tmp_br
+                                                 , tmp_bl );
+          }
+          else {/* no parent, we shelve off to all local peers */
+            LIST_FOREACH(&zone->nodes_all, le) {
+              peer = le->data;
+              if (!peer->is_onehop)
+                continue;
+              if (!memcmp( peer->cp.everip_addr
+                         , rpc->everip_addr
+                         , EVERIP_ADDRESS_LENGTH)) {
+                continue;
+              }
+              (void)treeoflife_peer_dht_notify_send( peer->cp.everip_addr
+                                                   , tmp_everip_record
+                                                   , tmp_zoneid
+                                                   , tmp_rootp
+                                                   , tmp_br
+                                                   , tmp_bl );
+            }
+          }
+        }
 
         error("DHT NOTIFY!!!\n");
       }
@@ -580,7 +761,6 @@ static int treeoflife_command_cb_child( struct treeoflife_csock *tol_c
 {
   int err = 0;
   struct le *le;
-  struct odict *od_dht = NULL;
   const struct odict_entry *ode;
   struct treeoflife_peer *peer = NULL;
   struct treeoflife_zone *zone = NULL;
@@ -696,55 +876,25 @@ static int treeoflife_command_cb_child( struct treeoflife_csock *tol_c
   }
 
   { /* x:s dht */
-    uint8_t route[ROUTE_LENGTH];
-    uint8_t chosen_everip[EVERIP_ADDRESS_LENGTH];
 
-    memset(route, 0, sizeof(route));
-
-    odict_alloc(&od_dht, 8);
-
-    if (treeoflife_everip_for_route( tol_c
-                                   , route
-                                   , chosen_everip )) {
-      error("NO NODE WAS CHOSEN!\n");
+    /*
+       for dht notify, always send to parent;
+       if we have no parent, assume that we are root,
+       and that we are connected to leaves.
+     */
+    if (!zone->parent)
       goto out;
-    }
 
-    info("THIS NODE WAS CHOSEN FOR DHT: %W\n", chosen_everip, EVERIP_ADDRESS_LENGTH);
-
-    odict_entry_add( od_dht, "mode", ODICT_STRING, &(struct pl)PL("notify"));
-
-    odict_entry_add( od_dht, "zoneid", ODICT_INT, tmp_zoneid);
-
-    odict_entry_add( od_dht
-                   , "root"
-                   , ODICT_STRING
-                   , &(struct pl){ .p=(const char *)zone->root
-                                 , .l=EVERIP_ADDRESS_LENGTH});
-
-    odict_entry_add( od_dht
-                   , "br"
-                   , ODICT_STRING
-                   , &(struct pl){ .p=(const char *)zone->binrep
-                                 , .l=ROUTE_LENGTH});
-
-    odict_entry_add( od_dht, "bl", ODICT_INT, zone->binlen);
-
-    err = magi_melchior_send( everip_magi_melchior()
-                            , od_dht
-                            , &(struct pl)PL("tree.dht")
-                            , chosen_everip
-                            , 1 /* don't mind if we timeout soon */
-                            , false /* is not routable */
-                            , NULL /* do not expect reply */
-                            , tol_c );
-
-    od_dht = mem_deref( od_dht );
+    (void)treeoflife_peer_dht_notify_send( zone->parent->cp.everip_addr
+                                         , tol_c->my_everip
+                                         , tmp_zoneid
+                                         , zone->root
+                                         , zone->binrep
+                                         , zone->binlen );
     /* x:e dht */
   }
 
 out:
-  od_dht = mem_deref( od_dht );
   return err;
 }
 
@@ -1075,6 +1225,10 @@ static void treeoflife_destructor(void *data)
   struct treeoflife_csock *tol_c = data;
   hash_flush( tol_c->peers_addr );
   tol_c->peers_addr = mem_deref( tol_c->peers_addr );
+  for (int i = 0; i < TOL_ZONE_COUNT; ++i)
+  {
+    list_flush(&tol_c->zone[i].dhti_all);
+  }
 }
 
 static int module_init(void)
