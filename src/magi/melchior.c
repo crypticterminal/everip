@@ -41,19 +41,20 @@ struct magi_melchior_ticket {
 
 };
 
-static int magi_melchior_ticket_serialize( struct magi_melchior_ticket *mmt
+static int magi_melchior_ticket_serialize( struct magi_melchior *mm
+                                         , struct odict *od
                                          , struct mbuf *mb )
 {
   int err = 0;
   size_t mb_pos;
   uint8_t public_sign_key[32];
 
-  if (!mmt || !mb)
+  if (!mm || !od || !mb)
     return EINVAL;
 
   mb_pos = mb->pos;
 
-  err = mbuf_printf(mb, "%H", bencode_encode_odict, mmt->od_sent);
+  err = mbuf_printf(mb, "%H", bencode_encode_odict, od);
   if (err)
     goto out;
 
@@ -61,7 +62,7 @@ static int magi_melchior_ticket_serialize( struct magi_melchior_ticket *mmt
 
   /* sign */
 
-  cryptosign_pk_fromskpk(public_sign_key, mmt->ctx->ne->sign_keys);
+  cryptosign_pk_fromskpk(public_sign_key, mm->ne->sign_keys);
 
   /* header = 112U */
   /*[SIGNATURE 64U][PUBLIC_KEY 32U][TAI64N 12U][OPTIONS 4U]*/
@@ -85,7 +86,7 @@ static int magi_melchior_ticket_serialize( struct magi_melchior_ticket *mmt
   mbuf_set_pos(mb, mb_pos);
 
   /* sign out */
-  cryptosign_bytes(mmt->ctx->ne->sign_keys, mbuf_buf(mb), mbuf_get_left(mb));
+  cryptosign_bytes(mm->ne->sign_keys, mbuf_buf(mb), mbuf_get_left(mb));
 
 out:
   return err;
@@ -103,6 +104,52 @@ static void magi_melchior_ticket_timeout(void *data)
                , mmt->userdata );
 
   mem_deref(mmt);
+}
+
+/* serialize, sign and send */
+static int magi_melchior_sss( struct magi_melchior *mm
+                            , struct odict *od
+                            , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
+                            , bool is_routable )
+{
+  int err = 0;
+  struct mbuf *mb = NULL;
+  struct magi_node *mnode = NULL;
+
+  if (!mm || !od || !everip_addr)
+    return EINVAL;
+
+  mb = mbuf_outward_alloc(0);
+  if (!mb) {
+    err = ENOMEM;
+    goto out;
+  }
+
+  err = magi_melchior_ticket_serialize(mm, od, mb);
+  if (err)
+    goto out;
+
+  /* send to subsystem */
+  debug("magi_melchior_send: [%u][%W]\n", mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));
+
+  if (is_routable) {
+    error("magi_melchior_send: routable messages are not available;\n");
+  } else {
+    mnode = magi_node_lookup_by_eipaddr( mm->ctx, everip_addr );
+    if (!mnode) {
+      error("magi_melchior_send: hmm, no magi record!\n");
+      goto out;
+    }
+
+    /* port zero is for melchior */
+    magi_node_ledbat_send(mnode, mb, MAGI_LEDBAT_PORT_MELCHIOR);
+
+  }
+
+  mb = mem_deref(mb);
+
+out:
+  return err;
 }
 
 static void magi_melchior_ticket_destructor(void *data)
@@ -127,8 +174,6 @@ int magi_melchior_send( struct magi_melchior *mm
                       , void *userdata )
 {
   int err = 0;
-  struct mbuf *mb = NULL;
-  struct magi_node *mnode = NULL;
   struct magi_melchior_ticket *mmt = NULL;
 
   if (!mm || !od || !method || !everip_addr || !callback)
@@ -162,35 +207,12 @@ int magi_melchior_send( struct magi_melchior *mm
   odict_entry_add(mmt->od_sent, "_i", ODICT_INT, mmt->ticket_id);
   odict_entry_add(mmt->od_sent, "_t", ODICT_STRING, &(struct pl){.p=(const char *)everip_addr,.l=EVERIP_ADDRESS_LENGTH});
   
-  /* sign and serialize */
-
-  mb = mbuf_outward_alloc(0);
-  if (!mb)
-    goto out;
-
-  err = magi_melchior_ticket_serialize(mmt, mb);
+  /* serialize, sign and send */
+  err = magi_melchior_sss(mm, mmt->od_sent, everip_addr, is_routable);
   if (err)
     goto out;
 
-  /* send to subsystem */
-  debug("magi_melchior_send: [%u][%W]\n", mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));
-
-  if (is_routable) {
-    error("magi_melchior_send: routable messages are not available;\n");
-  } else {
-    mnode = magi_node_lookup_by_eipaddr( mm->ctx, everip_addr );
-    if (!mnode) {
-      error("magi_melchior_send: hmm, no magi record!\n");
-      goto out;
-    }
-
-    /* port zero is for melchior */
-    magi_node_ledbat_send(mnode, mb, MAGI_LEDBAT_PORT_MELCHIOR);
-
-  }
-
 out:
-  mb = mem_deref(mb);
   if (err)
     mmt = mem_deref( mmt );
   return err;
@@ -299,6 +321,7 @@ int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
           }
           break;
         default:
+          error("magi_melchior_recv: got unknown ever command [%b]\n", ns_suf.p, ns_suf.l);
           goto out;
       }
     } else {
@@ -309,16 +332,18 @@ int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
     odict_entry_add(od_ret, "_p", ODICT_INT, (int64_t)EVERIP_VERSION_PROTOCOL);
 
     if (cmd_err) {
-      odict_entry_add(od_ret, "_m", ODICT_STRING, &(struct pl){.p="ever.err",.l=8});
+      odict_entry_add(od_ret, "_m", ODICT_STRING, &(struct pl)PL("ever.err"));
       odict_entry_add(od_ret, "_e", ODICT_INT, (int64_t)cmd_err);
     } else {
-      odict_entry_add(od_ret, "_m", ODICT_STRING, &(struct pl){.p="ever.res",.l=8});
+      odict_entry_add(od_ret, "_m", ODICT_STRING, &(struct pl)PL("ever.res"));
     }
 
     odict_entry_add(od_ret, "_i", ODICT_INT, ticket_id);
     odict_entry_add(od_ret, "_t", ODICT_STRING, &(struct pl){.p=(const char *)everip_addr,.l=EVERIP_ADDRESS_LENGTH});
 
     error("ODICT RES: %H\n", odict_debug, od_ret);
+
+    magi_melchior_sss(mm, od_ret, everip_addr, false);
 
   }
 
