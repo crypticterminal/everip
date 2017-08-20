@@ -73,7 +73,6 @@ static struct treeoflife_csock *g_tol = NULL;
 
 static
 int treeoflife_everip_for_route( struct treeoflife_csock *tol_c
-                               , uint8_t routelen
                                , uint8_t route[ROUTE_LENGTH]
                                , uint8_t everip_addr[EVERIP_ADDRESS_LENGTH])
 {
@@ -96,7 +95,7 @@ int treeoflife_everip_for_route( struct treeoflife_csock *tol_c
 
     LIST_FOREACH(&zone->nodes_all, le) {
       peer = le->data;
-      if (!peer->is_onehop)
+      if (!peer->is_onehop || !peer->z[i].binlen)
         continue;
       temp_diff = stack_linf_diff(route, peer->z[i].binrep, &places);
       if (temp_diff == 0 && !memcmp(route, peer->z[i].binrep, ROUTE_LENGTH)) {
@@ -396,6 +395,106 @@ static int _peer_create( struct conduit_peer **peerp
   return 0;
 }
 
+static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
+                                    , struct magi_melchior_rpc *rpc )
+{
+  int err = 0;
+  const struct odict_entry *ode;
+  struct treeoflife_zone *zone = NULL;
+
+  uint16_t tmp_zoneid;
+  uint8_t *tmp_rootp;
+
+  uint8_t *tmp_br;  
+  uint16_t tmp_bl;
+
+  if (!tol_c || !rpc)
+    return EINVAL;
+
+  rpc->out = NULL; /* they're not expecting anything back */
+
+  /*
+    [X] zoneid
+    [X] root
+    [X] br
+    [X] bl
+
+    [X] mode
+
+  */
+
+  ode = odict_lookup(rpc->in, "zoneid");
+  if (!ode || ode->type != ODICT_INT) {
+    goto out;
+  }
+
+  tmp_zoneid = ode->u.integer;
+
+  if (tmp_zoneid >= TOL_ZONE_COUNT) {
+    goto out;
+  }
+
+  zone = &tol_c->zone[tmp_zoneid];
+
+  ode = odict_lookup(rpc->in, "root");
+  if (!ode || ode->type != ODICT_STRING) {
+    goto out;
+  }
+
+  /* root must be same as everip address */
+  if (ode->u.pl.l != EVERIP_ADDRESS_LENGTH) {
+    goto out;
+  } 
+
+  tmp_rootp = (uint8_t *)ode->u.pl.p;
+
+  /* if we are not the same root on the same zone, ignore! */
+  if (memcmp(zone->root, tmp_rootp, EVERIP_ADDRESS_LENGTH))
+    goto out;
+
+  ode = odict_lookup(rpc->in, "mode");
+  if (!ode || ode->type != ODICT_STRING) {
+    err = EPROTO;
+    goto out;
+  }
+
+  switch (ode->u.pl.l) {
+    case 6:
+      /* notify */
+      if (!memcmp(ode->u.pl.p, "notify", 6))
+      {
+        ode = odict_lookup(rpc->in, "br");
+        if (!ode || ode->type != ODICT_STRING) {
+          err = EPROTO;
+          goto out;
+        }
+
+        if (ode->u.pl.l != TOL_ROUTE_LENGTH) {
+          err = EPROTO;
+          goto out;
+        }
+
+        tmp_br = (uint8_t *)ode->u.pl.p;
+
+        ode = odict_lookup(rpc->in, "bl");
+        if (!ode || ode->type != ODICT_INT) {
+          err = EPROTO;
+          goto out;
+        }
+
+        tmp_bl = (uint16_t)ode->u.integer;
+
+        error("DHT NOTIFY!!!\n");
+      }
+    default:
+      err = EPROTO;
+      goto out;
+  }
+
+out:
+  return err;
+}
+
 static int treeoflife_command_cb_update( struct treeoflife_csock *tol_c
                                        , struct magi_melchior_rpc *rpc )
 {
@@ -481,6 +580,7 @@ static int treeoflife_command_cb_child( struct treeoflife_csock *tol_c
 {
   int err = 0;
   struct le *le;
+  struct odict *od_dht = NULL;
   const struct odict_entry *ode;
   struct treeoflife_peer *peer = NULL;
   struct treeoflife_zone *zone = NULL;
@@ -595,7 +695,56 @@ static int treeoflife_command_cb_child( struct treeoflife_csock *tol_c
     }
   }
 
+  { /* x:s dht */
+    uint8_t route[ROUTE_LENGTH];
+    uint8_t chosen_everip[EVERIP_ADDRESS_LENGTH];
+
+    memset(route, 0, sizeof(route));
+
+    odict_alloc(&od_dht, 8);
+
+    if (treeoflife_everip_for_route( tol_c
+                                   , route
+                                   , chosen_everip )) {
+      error("NO NODE WAS CHOSEN!\n");
+      goto out;
+    }
+
+    info("THIS NODE WAS CHOSEN FOR DHT: %W\n", chosen_everip, EVERIP_ADDRESS_LENGTH);
+
+    odict_entry_add( od_dht, "mode", ODICT_STRING, &(struct pl)PL("notify"));
+
+    odict_entry_add( od_dht, "zoneid", ODICT_INT, tmp_zoneid);
+
+    odict_entry_add( od_dht
+                   , "root"
+                   , ODICT_STRING
+                   , &(struct pl){ .p=(const char *)zone->root
+                                 , .l=EVERIP_ADDRESS_LENGTH});
+
+    odict_entry_add( od_dht
+                   , "br"
+                   , ODICT_STRING
+                   , &(struct pl){ .p=(const char *)zone->binrep
+                                 , .l=ROUTE_LENGTH});
+
+    odict_entry_add( od_dht, "bl", ODICT_INT, zone->binlen);
+
+    err = magi_melchior_send( everip_magi_melchior()
+                            , od_dht
+                            , &(struct pl)PL("tree.dht")
+                            , chosen_everip
+                            , 1 /* don't mind if we timeout soon */
+                            , false /* is not routable */
+                            , NULL /* do not expect reply */
+                            , tol_c );
+
+    od_dht = mem_deref( od_dht );
+    /* x:e dht */
+  }
+
 out:
+  od_dht = mem_deref( od_dht );
   return err;
 }
 
@@ -864,6 +1013,12 @@ static int treeoflife_command_callback( struct magi_melchior_rpc *rpc
   info("treeoflife_command_callback: [%b]\n", method->p, method->l);
 
   switch (method->l) {
+    case 3:
+      /* dht */
+      if (!memcmp(method->p, "dht", 3))
+      {
+        return treeoflife_command_cb_dht(tol_c, rpc);
+      }
     case 4:
       /* zone */
       if (!memcmp(method->p, "zone", 4))
