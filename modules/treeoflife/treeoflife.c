@@ -23,10 +23,15 @@
 
 struct treeoflife_zone {
   uint8_t root[EVERIP_ADDRESS_LENGTH];
+  uint8_t parent[EVERIP_ADDRESS_LENGTH];
   uint32_t height;
 
   uint8_t binlen;
   uint8_t binrep[TOL_ROUTE_LENGTH];
+
+  struct list nodes_all;
+  struct hash *nodes_addr;
+
 };
 
 struct treeoflife_csock {
@@ -34,6 +39,7 @@ struct treeoflife_csock {
   struct list peers;
   struct hash *peers_addr;
 
+  uint8_t my_everip[EVERIP_ADDRESS_LENGTH];
   struct treeoflife_zone zone[TOL_ZONE_COUNT];
 };
 
@@ -51,10 +57,13 @@ static int _conduit_debug(struct re_printf *pf, void *arg)
   const struct treeoflife_zone *zone;
   struct treeoflife_csock *tol_c = arg;
 
+  err |= re_hprintf(pf, "→ EVER[IP][%W]\n", tol_c->my_everip, EVERIP_ADDRESS_LENGTH);
+
   for (int i = 0; i < ZONE_COUNT; ++i)
   {
     zone = &tol_c->zone[i];
-    err |= re_hprintf(pf, "→ ZONE[%i][ROOT:%W]\n", i, &zone->root, EVERIP_ADDRESS_LENGTH);
+    err |= re_hprintf(pf, "→ ZONE[%i][ROOTID:%W]\n", i, &zone->root, EVERIP_ADDRESS_LENGTH);
+    err |= re_hprintf(pf, "→ ZONE[%i][PARENT:%W]\n", i, &zone->parent, EVERIP_ADDRESS_LENGTH);
     err |= re_hprintf(pf, "→ ZONE[%i][HEIGHT:%u]\n", i, zone->height);
 #if 0
     if (zone->parent) {
@@ -65,7 +74,7 @@ static int _conduit_debug(struct re_printf *pf, void *arg)
     err |= re_hprintf(pf, "→ ZONE[%i][COORDS:%u;%H]\n", i, zone->binlen, stack_debug, zone->binrep);
   }
 
-  re_hprintf(pf, "→ {Tree of Life has no Peers}\n");
+  /*re_hprintf(pf, "→ {Tree of Life has no Peers}\n");*/
 
   return err;
 }
@@ -111,6 +120,7 @@ static int treeoflife_command_send_zone( struct treeoflife_csock *tol_c
 
   odict_entry_add(od, "zone", ODICT_INT, 0);
   odict_entry_add(od, "root", ODICT_STRING, &(struct pl){.p=(const char *)tol_c->zone[0].root,.l=EVERIP_ADDRESS_LENGTH});
+  odict_entry_add(od, "parent", ODICT_STRING, &(struct pl){.p=(const char *)tol_c->zone[0].parent,.l=EVERIP_ADDRESS_LENGTH});
   odict_entry_add(od, "height", ODICT_INT, tol_c->zone[0].height);
 
   err = magi_melchior_send( everip_magi_melchior()
@@ -127,12 +137,124 @@ static int treeoflife_command_send_zone( struct treeoflife_csock *tol_c
   return err;
 }
 
+/* IN: zone, parent, height, root */
+static int treeoflife_command_cb_zone( struct treeoflife_csock *tol_c
+                                     , struct magi_melchior_rpc *rpc )
+{
+  int err = 0;
+  uint16_t weight = 0;
+  struct treeoflife_zone *zone = &tol_c->zone[0];
+
+  uint8_t *tmp_rootp;
+  uint16_t tmp_height;
+  uint8_t *tmp_parentp;
+
+  int rootcmp;
+  bool we_are_set_parent;
+  const struct odict_entry *ode;
+
+  /* get all of our items */
+  ode = odict_lookup(rpc->in, "zone");
+  if (!ode || ode->type != ODICT_INT) {
+    err = EPROTO;
+    goto out;
+  }
+
+  if (ode->u.integer != 0) {
+    err = EPROTO;
+    goto out;
+  }
+
+  ode = odict_lookup(rpc->in, "height");
+  if (!ode || ode->type != ODICT_INT) {
+    err = EPROTO;
+    goto out;
+  }
+
+  tmp_height = (uint16_t)ode->u.integer;
+
+  ode = odict_lookup(rpc->in, "root");
+  if (!ode || ode->type != ODICT_STRING) {
+    err = EPROTO;
+    goto out;
+  }
+
+  /* root must be same as everip address */
+  if (ode->u.pl.l != EVERIP_ADDRESS_LENGTH) {
+    err = EPROTO;
+    goto out;
+  } 
+
+  tmp_rootp = (uint8_t *)ode->u.pl.p;
+
+  ode = odict_lookup(rpc->in, "parent");
+  if (!ode || ode->type != ODICT_STRING) {
+    err = EPROTO;
+    goto out;
+  }
+
+  /* parent must be same as everip address */
+  if (ode->u.pl.l != EVERIP_ADDRESS_LENGTH) {
+    err = EPROTO;
+    goto out;
+  } 
+
+  tmp_parentp = (uint8_t *)ode->u.pl.p;  
+
+  /* begin calculation */
+  we_are_set_parent = !memcmp(tmp_parentp, tol_c->my_everip, EVERIP_ADDRESS_LENGTH);
+  rootcmp = memcmp(tmp_rootp, zone->root, EVERIP_ADDRESS_LENGTH);
+
+  /* join chain check: */
+  if ( !we_are_set_parent
+    && ( (rootcmp > 0) || (!rootcmp && tmp_height + weight < zone->height) ) )
+  {
+    memcpy(zone->root, tmp_rootp, EVERIP_ADDRESS_LENGTH);
+    zone->height = tmp_height + weight;
+
+    if (zone->parent[0]) {
+      /* do destruct here? */
+    }
+
+    memcpy(zone->parent, rpc->everip_addr, EVERIP_ADDRESS_LENGTH);
+
+    /* we should update parents here.. */
+  }
+
+  if ( we_are_set_parent ) {
+    info("TREE: [%W] is my child!\n", rpc->everip_addr, EVERIP_ADDRESS_LENGTH);
+  } else {
+    info("TREE: [%W] is NOT my child!\n", rpc->everip_addr, EVERIP_ADDRESS_LENGTH);
+  }
+
+
+out:
+  return err;
+}
+
 static int treeoflife_command_callback( struct magi_melchior_rpc *rpc
                                       , struct pl *method
                                       , void *arg )
 {
-  error("treeoflife_command_callback: [%b]\n", method->p, method->l);
-  return 0;
+  struct treeoflife_csock *tol_c = arg;
+
+  if (!rpc || !tol_c || !method)
+    return EINVAL;
+
+  info("treeoflife_command_callback: [%b]\n", method->p, method->l);
+
+  switch (method->l) {
+    case 4:
+      /* zone */
+      if (!memcmp(method->p, "zone", 4))
+      {
+        return treeoflife_command_cb_zone(tol_c, rpc);
+      }
+    default:
+      return EPROTO;
+  }
+  /* failsafe */
+  return EPROTO;
 }
 
 static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
@@ -166,6 +288,13 @@ static void treeoflife_destructor(void *data)
   struct treeoflife_csock *tol_c = data;
   hash_flush( tol_c->peers_addr );
   tol_c->peers_addr = mem_deref( tol_c->peers_addr );
+
+  for (int i = 0; i < TOL_ZONE_COUNT; ++i)
+  {
+    hash_flush(tol_c->zone[i].nodes_addr);
+    tol_c->zone[i].nodes_addr = mem_deref( tol_c->zone[i].nodes_addr );
+  }
+
 }
 
 static int module_init(void)
@@ -179,16 +308,20 @@ static int module_init(void)
 
   hash_alloc(&g_tol->peers_addr, 8);
 
+  everip_addr_copy(g_tol->my_everip);
+
   for (int i = 0; i < TOL_ZONE_COUNT; ++i)
   {
-    everip_addr_copy(g_tol->zone[i].root);
+    memcpy(g_tol->zone[i].root, g_tol->my_everip, EVERIP_ADDRESS_LENGTH);
     g_tol->zone[i].binlen = 1;
     memset(g_tol->zone[i].binrep, 0, TOL_ROUTE_LENGTH);
+
+    hash_alloc(&g_tol->zone[i].nodes_addr, 16);
   }
 
   /* register with the system */
   err = magi_melchior_register( everip_magi_melchior()
-                              , "tree"
+                              , (void *)"tree"
                               , treeoflife_command_callback
                               , g_tol );
   if (err) {
