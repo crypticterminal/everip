@@ -534,6 +534,8 @@ typedef int (conduit_send_h)(struct conduit_peer *peer, struct mbuf *mb, void *a
 
 typedef int (conduit_debug_h)(struct re_printf *pf, void *arg);
 
+typedef int (conduit_search_h)(const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH], void *arg);
+
 #define CONDUIT_FLAG_BCAST   (1<<0) /* this conduit can broadcast messages */
 #define CONDUIT_FLAG_VIRTUAL (1<<1) /* for things like tree of life */
 
@@ -554,6 +556,9 @@ struct conduit {
 
   conduit_debug_h *debug_h;
   void *debug_h_arg;
+
+  conduit_search_h *search_h;
+  void *search_h_arg;
 };
 
 #define CONDUIT_PEER_FLAG_BCAST (1<<0)
@@ -595,6 +600,11 @@ static inline void conduit_peer_deref(struct conduit_peer *peer)
 int conduit_peer_encrypted_send( struct conduit_peer *cp
                                , struct mbuf *mb );
 
+int conduit_peer_initiate( struct conduit_peer *peer
+                         , struct conduit *conduit
+                         , const uint8_t public_key[NOISE_PUBLIC_KEY_LEN]
+                         , bool do_handshake );
+
 int conduit_peer_create( struct conduit_peer **peerp
                        , struct conduit *conduit
                        , struct pl *key
@@ -616,6 +626,10 @@ int conduit_register_send_handler( struct conduit *conduit
 int conduit_register_debug_handler( struct conduit *conduit
                                   , conduit_debug_h *debug_h
                                   , void *debug_h_arg );
+
+int conduit_register_search_handler( struct conduit *conduit
+                                   , conduit_search_h *search_h
+                                   , void *search_h_arg );
 
 struct conduit_peer *
 conduits_conduit_peer_search( struct conduits *conduits
