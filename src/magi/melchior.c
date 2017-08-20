@@ -196,14 +196,29 @@ out:
   return err;
 }
 
+static int magi_melchior_command_hello( struct odict *ret
+                                      , struct odict *input
+                                      , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] )
+{
+
+  error("\n\nmagi_melchior_command_hello <%p><%p><%W>\n\n", ret, input, everip_addr, EVERIP_ADDRESS_LENGTH);
+
+  return 0;
+}
+
 int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
 {
 
   size_t pos;
-  struct odict *od;
+  int err = 0;
+  struct odict *od = NULL;
+  struct odict *od_ret = NULL;
+
+  uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
+  uint8_t public_key_curve25519[NOISE_PUBLIC_KEY_LEN];
 
   uint8_t signature[CRYPTOSIGN_SIGNATURE_LENGTH];
-  uint8_t public_key[32];
+  uint8_t public_key_ed25519[32];
   uint8_t tai64n[TAI64_N_LEN];
   uint8_t options[4];
 
@@ -213,29 +228,103 @@ int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
   pos = mb->pos;
 
   mbuf_read_mem(mb, signature, CRYPTOSIGN_SIGNATURE_LENGTH);
-  mbuf_read_mem(mb, public_key, 32);
+  mbuf_read_mem(mb, public_key_ed25519, 32);
   mbuf_read_mem(mb, tai64n, TAI64_N_LEN);
   mbuf_read_mem(mb, options, 4);
 
   mbuf_set_pos(mb, pos + CRYPTOSIGN_SIGNATURE_LENGTH);
 
   /* check signature */
-  if (cryptosign_bytes_verify( public_key
+  if (cryptosign_bytes_verify( public_key_ed25519
                              , signature
                              , mbuf_buf(mb)
                              , mbuf_get_left(mb) )) {
     return EBADMSG;
   }
 
+  /* calculate everip address */
+  if (crypto_sign_ed25519_pk_to_curve25519( public_key_curve25519
+                                          , public_key_ed25519 ))
+  {
+    error("magi_melchior_recv: Invalid Identity\n");
+    return EPROTO;
+  }
+
+  if (!addr_calc_pubkeyaddr( everip_addr, public_key_curve25519 )) {
+    error("magi_melchior_recv: Invalid Identity\n");
+    return EPROTO;
+  }
+
   mbuf_set_pos(mb, pos + 112);
 
-  if (bencode_decode_odict(&od, 8, mbuf_buf(mb), mbuf_get_left(mb), 3))
+  if (bencode_decode_odict( &od
+                          , 8
+                          , (const char *)mbuf_buf(mb)
+                          , mbuf_get_left(mb)
+                          , 3 ))
     return EBADMSG;
 
   error("ODICT: %H\n", odict_debug, od);
 
-  od = mem_deref(od);
+  /* pull-out method */
+  {
+    int cmd_err = 0;
+    int64_t ticket_id;
+    struct pl ns_pre, ns_suf;
+    const struct odict_entry *ode;
 
+    ode = odict_lookup(od, "_m");
+    if (!ode || ode->type != ODICT_STRING)
+      goto out;
+
+    err = re_regex(ode->u.pl.p, ode->u.pl.l, "[^.]+.[^]*", &ns_pre, &ns_suf);
+    if (err)
+      goto out;
+
+    ode = odict_lookup(od, "_i");
+    if (!ode || ode->type != ODICT_INT)
+      goto out;
+
+    ticket_id = ode->u.integer;
+
+    odict_alloc(&od_ret, 8);
+
+    if (4 == ns_pre.l && !memcmp(ns_pre.p, "ever", 4)) {
+      /* ever command */
+      switch (ns_suf.l) {
+        case 5:
+          /* hello */
+          if (!memcmp(ns_suf.p, "hello", 5)) {
+            cmd_err = magi_melchior_command_hello(od_ret, od, everip_addr);
+          }
+          break;
+        default:
+          goto out;
+      }
+    } else {
+      /* lookup */
+      goto out;
+    }
+
+    odict_entry_add(od_ret, "_p", ODICT_INT, (int64_t)EVERIP_VERSION_PROTOCOL);
+
+    if (cmd_err) {
+      odict_entry_add(od_ret, "_m", ODICT_STRING, &(struct pl){.p="ever.err",.l=8});
+      odict_entry_add(od_ret, "_e", ODICT_INT, (int64_t)cmd_err);
+    } else {
+      odict_entry_add(od_ret, "_m", ODICT_STRING, &(struct pl){.p="ever.res",.l=8});
+    }
+
+    odict_entry_add(od_ret, "_i", ODICT_INT, ticket_id);
+    odict_entry_add(od_ret, "_t", ODICT_STRING, &(struct pl){.p=(const char *)everip_addr,.l=EVERIP_ADDRESS_LENGTH});
+
+    error("ODICT RES: %H\n", odict_debug, od_ret);
+
+  }
+
+out:
+  od = mem_deref(od);
+  od_ret = mem_deref(od_ret);
   return 0;
 }
 

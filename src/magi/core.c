@@ -406,7 +406,7 @@ static void magi_maintenance_cb(void *data)
 
       err = magi_melchior_send( everip_magi_melchior()
                               , od
-                              , &(struct pl){.p="hello",.l=5}
+                              , &(struct pl){.p="ever.hello",.l=10}
                               , mnode->everip_addr
                               , 5000
                               , false /* is not routable */
