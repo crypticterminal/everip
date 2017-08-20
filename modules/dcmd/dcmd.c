@@ -330,24 +330,6 @@ static int cmd_conduits_debug(struct re_printf *pf, void *unused)
   return conduits_debug(pf, everip_conduits());
 }
 
-static int cmd_treeoflife_debug(struct re_printf *pf, void *unused)
-{
-  (void)unused;
-  return treeoflife_debug(pf, everip_treeoflife());
-}
-
-static int cmd_treeoflife_dht_debug(struct re_printf *pf, void *unused)
-{
-  (void)unused;
-  return treeoflife_dht_debug(pf, everip_treeoflife());
-}
-
-static int cmd_caengine_debug(struct re_printf *pf, void *unused)
-{
-  (void)unused;
-  return caengine_debug(pf, everip_caengine());
-}
-
 static int cmd_atfield_debug(struct re_printf *pf, void *unused)
 {
   (void)unused;
@@ -412,7 +394,6 @@ static int cmd_peer_add(struct re_printf *pf, void *arg)
   struct pl pl, pscheme, key, data;
   struct conduit *conduit = NULL;
   struct conduit_peer *peer;
-  struct magi_node *mnode;
   char scheme[128];
 
   pl_set_str(&pl, carg->prm);
@@ -432,11 +413,6 @@ static int cmd_peer_add(struct re_printf *pf, void *arg)
     err |= re_hprintf(pf, "CONDUIT [%s] could not be found\n", scheme); 
     goto out;
   }
-
-/*  mnode = magi_node_lookup_or_create( everip_magi()
-                                    , &key );
-  if (!mnode)
-    goto out;*/
 
   err = conduit_peer_create(&peer, conduit, &key, &data, true);
   if (err)
@@ -458,10 +434,6 @@ static const struct cmd debugcmdv[] = {
   {"legal", 0,      0, "Legal Information",            menu_legal           },
   {"conduits", 0,      0, "Conduits Information",            cmd_conduits_debug },
   
-  //{"tree", 't',      0, "Routing Tree Information",            cmd_treeoflife_debug },
-  //{"dht", 'd',      0, "DHT Database",            cmd_treeoflife_dht_debug },
-  //{"crypto", 'c',      0, "Crypto-Authentication (CA) Engine",            cmd_caengine_debug },
-
   {"at", 'a', 0, "A.T. FIELD", cmd_atfield_debug },
   {"at_bl", 0, CMD_PRM, "Add an EVER/IP Address to the Blacklist", cmd_atfield_action },
   {"at_wh", 0, CMD_PRM, "Add an EVER/IP Address to the Whitelist", cmd_atfield_action },
