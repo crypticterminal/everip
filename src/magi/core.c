@@ -399,7 +399,7 @@ static void magi_maintenance_cb(void *data)
   struct magi *magi = data;
   uint64_t now = tmr_jiffies();
 
-  error("magi_maintenance_cb\n");
+  /*error("magi_maintenance_cb\n");*/
 
   LIST_FOREACH(&magi->nodes, le) {
     mnode = le->data;

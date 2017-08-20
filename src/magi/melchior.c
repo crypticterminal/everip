@@ -22,6 +22,16 @@ struct magi_melchior {
   struct hash *tickets;
   struct noise_engine *ne;
   struct magi *ctx;
+
+  struct hash *handlers;
+};
+
+struct magi_melchior_handler {
+  struct le le;
+  uint8_t prefix[4];
+
+  magi_melchior_rpc_h *callback;
+  void *userdata;
 };
 
 struct magi_melchior_ticket {
@@ -41,6 +51,13 @@ struct magi_melchior_ticket {
   void *userdata;
 
 };
+
+static bool _magi_melchior_handle_lookup(struct le *le, void *arg)
+{
+  struct magi_melchior_handler *mmh = le->data;
+  error("_magi_melchior_handle_lookup: %b %u %u\n", mmh->prefix, 4, *(uint32_t *)(void *)mmh->prefix, *(uint32_t *)arg);
+  return *(uint32_t *)(void *)mmh->prefix == *(uint32_t *)arg;
+}
 
 static int magi_melchior_ticket_serialize( struct magi_melchior *mm
                                          , struct odict *od
@@ -350,6 +367,7 @@ int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
     struct pl ns_pre, ns_suf;
     const struct odict_entry *ode;
     struct magi_melchior_rpc rpc_obj;
+    struct magi_melchior_handler *mmh = NULL;
 
     memset(&rpc_obj, 0, sizeof(rpc_obj));
 
@@ -403,8 +421,22 @@ int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
           goto out;
       }
     } else {
-      /* lookup */
-      goto out;
+      error("magi_melchior_recv: got command [%b.%b]\n", ns_pre.p, ns_pre.l, ns_suf.p, ns_suf.l);
+
+      /* only support prefixes of 4 bytes */
+      if (ns_pre.l != 4)
+        goto out;
+
+      mmh = list_ledata(hash_lookup( mm->handlers
+                                   , *(uint32_t *)ns_pre.p
+                                   , _magi_melchior_handle_lookup
+                                   , ns_pre.p));
+      if (!mmh) {
+        goto out;
+      }
+
+      cmd_err = mmh->callback(&rpc_obj, &ns_suf, mmh->userdata);
+
     }
 
     if (rpc_obj.out) {
@@ -433,11 +465,56 @@ out:
   return 0;
 }
 
+static void magi_melchior_handle_destructor(void *data)
+{
+  struct magi_melchior_handler *mmh = data;
+  list_unlink(&mmh->le);
+}
+
+int magi_melchior_register( struct magi_melchior *mm
+                          , const uint8_t prefix[4]
+                          , magi_melchior_rpc_h *callback
+                          , void *userdata )
+{
+  int err = 0;
+  struct magi_melchior_handler *mmh = NULL;
+
+  if (!mm || !prefix || !callback)
+    return EINVAL;
+
+  mmh = list_ledata(hash_lookup( mm->handlers
+                               , *(uint32_t *)(void *)prefix
+                               , _magi_melchior_handle_lookup
+                               , (void *)prefix));
+
+  if (mmh)
+    return EALREADY;
+
+  mmh = mem_zalloc(sizeof(*mmh), magi_melchior_handle_destructor);
+  if (!mmh)
+    return ENOMEM;
+
+  *(uint32_t *)(void *)mmh->prefix = *(uint32_t *)(void *)prefix;
+
+  mmh->callback = callback;
+  mmh->userdata = userdata;
+
+  hash_append( mm->handlers
+             , *(uint32_t *)(void *)prefix
+             , &mmh->le
+             , mmh );
+
+  return err;
+}
+
 static void magi_melchior_destructor(void *data)
 {
   struct magi_melchior *mm = data;
   hash_flush(mm->tickets);
   mm->tickets = mem_deref( mm->tickets );
+
+  hash_flush(mm->handlers);
+  mm->handlers = mem_deref( mm->handlers );
 }
 
 int magi_melchior_alloc( struct magi_melchior **mmp
@@ -458,6 +535,7 @@ int magi_melchior_alloc( struct magi_melchior **mmp
   mm->ne = ne;
 
   hash_alloc(&mm->tickets, 16);
+  hash_alloc(&mm->handlers, 8);
 
   *mmp = mm;
 

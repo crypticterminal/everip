@@ -54,7 +54,6 @@ ASSERT_COMPILETIME(TAI64_N_LEN == (sizeof(uint64_t) + sizeof(uint32_t)));
         (__mp ? (t*)((void*)(char*)__mp - offsetof(t, m)) : NULL); \
     }))
 
-struct treeoflife;
 struct noise_engine;
 struct noise_session;
 
@@ -202,6 +201,7 @@ struct magi_eventdriver;
 struct magi_eventdriver_handler;
 
 struct magi_melchior;
+struct magi_melchior_rpc;
 struct magi_melchior_ticket;
 
 enum MAGI_NODE_STATUS {
@@ -236,7 +236,11 @@ typedef void (magi_melchior_h)( enum MAGI_MELCHIOR_RETURN_STATUS status
                               , struct odict *od_recv
                               , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
                               , uint64_t timediff
-                              , void *userdata);
+                              , void *userdata );
+
+typedef int (magi_melchior_rpc_h)( struct magi_melchior_rpc *rpc
+                                 , struct pl *method
+                                 , void *arg );
 
 struct magi_melchior_rpc {
   struct odict *in;
@@ -302,6 +306,11 @@ int magi_melchior_send( struct magi_melchior *mm
                       , void *userdata );
 
 int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb);
+
+int magi_melchior_register( struct magi_melchior *mm
+                          , const uint8_t prefix[4]
+                          , magi_melchior_rpc_h *callback
+                          , void *userdata );
 
 int magi_melchior_alloc( struct magi_melchior **mmp
                        , struct magi *magi
@@ -792,93 +801,6 @@ int stack_linf_diff(uint8_t left[ROUTE_LENGTH], uint8_t right[ROUTE_LENGTH], int
 int stack_debug(struct re_printf *pf, const uint8_t *binrep);
 
 /*
- * Tree of Life
- */
-
-typedef void (treeoflife_treemsg_h)( struct treeoflife *t
-                                   , uint8_t peerkey[KEY_LENGTH]
-                                   , struct mbuf *mb
-                                   , void *arg);
-
-typedef void (treeoflife_tunnel_h)( struct treeoflife *t
-                                  , struct mbuf *mb
-                                  , void *arg);
-
-#define TREEOFLIFE_DHT_MODE_BLANK 0
-#define TREEOFLIFE_DHT_MODE_SEARCH 1<<0
-#define TREEOFLIFE_DHT_MODE_OHPEER 1<<1
-#define TREEOFLIFE_DHT_MODE_MYCHLD 1<<2
-#define TREEOFLIFE_DHT_MODE_PARENT 1<<3
-
-struct treeoflife_dht_item {
-  struct le le;
-  uint8_t key[KEY_LENGTH];
-  uint8_t binlen;
-  uint8_t binrep[ROUTE_LENGTH];
-  uint8_t mode;
-  struct tmr tmr;
-  /* X:TODO in the future, we should also store signing data */
-};
-
-struct treeoflife_zone {
-  struct treeoflife_dht_item *parent;
-  uint8_t root[KEY_LENGTH];
-  uint32_t height;
-
-  uint8_t binlen;
-  uint8_t binrep[ROUTE_LENGTH];
-};
-
-struct treeoflife {
-  struct tmr tmr;
-  struct tmr tmr_maintain;
-
-  uint8_t selfkey[KEY_LENGTH];
-
-  struct treeoflife_zone zone[ZONE_COUNT];
-
-  treeoflife_treemsg_h *cb;
-  void *cb_arg;
-
-  treeoflife_tunnel_h *tun_cb;
-  void *tun_cb_arg;
-
-  uint64_t children_ts;
-  uint64_t maintain_ts;
-
-  struct list dht_items;
-};
-
-int treeoflife_init( struct treeoflife **treeoflifep, uint8_t public_key[KEY_LENGTH] );
-int treeoflife_debug(struct re_printf *pf, const struct treeoflife *t);
-int treeoflife_dht_debug(struct re_printf *pf, const struct treeoflife *t);
-
-void treeoflife_msg_recv( struct treeoflife *t, uint8_t peer_key[KEY_LENGTH], struct mbuf *mb, uint16_t weight );
-void treeoflife_register_cb( struct treeoflife *t, treeoflife_treemsg_h *cb, void *arg);
-void treeoflife_register_tuncb( struct treeoflife *t, treeoflife_tunnel_h *cb, void *arg);
-
-void treeoflife_peer_add(struct treeoflife *t, uint8_t peer_key[KEY_LENGTH]);
-void treeoflife_peer_del(struct treeoflife *t, uint8_t peer_key[KEY_LENGTH]);
-
-enum TREEOFLIFE_SEARCH {
-   TREEOFLIFE_SEARCH_NOTFOUND = 0
-  ,TREEOFLIFE_SEARCH_FOUNDLOC = 1
-  ,TREEOFLIFE_SEARCH_FOUNDRMT = 2
-};
-
-enum TREEOFLIFE_SEARCH treeoflife_search( struct treeoflife *t
-                                        , uint8_t search_key[KEY_LENGTH]
-                                        , uint8_t *binlen
-                                        , uint8_t binrep[ROUTE_LENGTH]
-                                        , bool skip_dht );
-
-int treeoflife_route_to_peer( struct treeoflife *t
-                            , uint8_t routelen
-                            , uint8_t route[ROUTE_LENGTH]
-                            , uint8_t out_key[KEY_LENGTH]);
-
-
-/*
  * Modules
  */
 
@@ -1045,6 +967,8 @@ struct commands *everip_commands(void);
 struct noise_engine *everip_noise(void);
 struct conduits *everip_conduits(void);
 struct atfield *everip_atfield(void);
+
+int everip_addr_copy(uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]);
 
 /* udp port */
 void everip_udpport_set(uint16_t port);

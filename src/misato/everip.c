@@ -539,6 +539,13 @@ struct atfield *everip_atfield(void)
     return everip.atfield;
 }
 
+int everip_addr_copy(uint8_t everip_addr[EVERIP_ADDRESS_LENGTH])
+{
+  return memcpy(everip_addr, everip.myaddr, EVERIP_ADDRESS_LENGTH);
+}
+
+
+
 void everip_udpport_set(uint16_t port)
 {
     everip.udp_port = port;

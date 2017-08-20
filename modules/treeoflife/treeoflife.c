@@ -18,16 +18,23 @@
 #include <re.h>
 #include <everip.h>
 
+#define TOL_ZONE_COUNT 1
+#define TOL_ROUTE_LENGTH 16 /* 128 bytes */
+
+struct treeoflife_zone {
+  uint8_t root[EVERIP_ADDRESS_LENGTH];
+  uint32_t height;
+
+  uint8_t binlen;
+  uint8_t binrep[TOL_ROUTE_LENGTH];
+};
+
 struct treeoflife_csock {
   struct conduit *conduit;
   struct list peers;
   struct hash *peers_addr;
-#if 0
 
-  parents
-  children
-
-#endif
+  struct treeoflife_zone zone[TOL_ZONE_COUNT];
 };
 
 static struct treeoflife_csock *g_tol = NULL;
@@ -41,9 +48,24 @@ static bool _peer_debug(struct le *le, void *arg)
 static int _conduit_debug(struct re_printf *pf, void *arg)
 {
   int err = 0;
+  const struct treeoflife_zone *zone;
   struct treeoflife_csock *tol_c = arg;
 
-  re_hprintf(pf, " {Tree of Life has no Peers}\n");
+  for (int i = 0; i < ZONE_COUNT; ++i)
+  {
+    zone = &tol_c->zone[i];
+    err |= re_hprintf(pf, "→ ZONE[%i][ROOT:%W]\n", i, &zone->root, EVERIP_ADDRESS_LENGTH);
+    err |= re_hprintf(pf, "→ ZONE[%i][HEIGHT:%u]\n", i, zone->height);
+#if 0
+    if (zone->parent) {
+      err |= re_hprintf(pf, "  PARENT[%W]\n", zone->parent->key, EVERIP_ADDRESS_LENGTH);
+      err |= re_hprintf(pf, "        [%u@%H]\n", zone->parent->binlen, stack_debug, zone->parent->binrep);
+    }
+#endif
+    err |= re_hprintf(pf, "→ ZONE[%i][COORDS:%u;%H]\n", i, zone->binlen, stack_debug, zone->binrep);
+  }
+
+  re_hprintf(pf, "→ {Tree of Life has no Peers}\n");
 
   return err;
 }
@@ -60,6 +82,56 @@ static int _peer_create( struct conduit_peer **peerp
 
   *peerp = NULL;
 
+  return 0;
+}
+
+static void _treeoflife_command_cb( enum MAGI_MELCHIOR_RETURN_STATUS status
+                                  , struct odict *od_sent
+                                  , struct odict *od_recv
+                                  , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
+                                  , uint64_t timediff
+                                  , void *userdata )
+{
+
+  if (status != MAGI_MELCHIOR_RETURN_STATUS_OK)
+    return; /* ignore for now */
+
+  error("_treeoflife_command_cb\n");
+
+  return;
+}
+
+static int treeoflife_command_send_zone( struct treeoflife_csock *tol_c
+                                       , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] )
+{
+  int err = 0;
+  struct odict *od = NULL;
+
+  odict_alloc(&od, 8);
+
+  odict_entry_add(od, "zone", ODICT_INT, 0);
+  odict_entry_add(od, "root", ODICT_STRING, &(struct pl){.p=(const char *)tol_c->zone[0].root,.l=EVERIP_ADDRESS_LENGTH});
+  odict_entry_add(od, "height", ODICT_INT, tol_c->zone[0].height);
+
+  err = magi_melchior_send( everip_magi_melchior()
+                          , od
+                          , &(struct pl)PL("tree.zone")
+                          , everip_addr
+                          , 5000
+                          , false /* is not routable */
+                          , _treeoflife_command_cb
+                          , tol_c );
+
+  od = mem_deref(od);
+
+  return err;
+}
+
+static int treeoflife_command_callback( struct magi_melchior_rpc *rpc
+                                      , struct pl *method
+                                      , void *arg )
+{
+  error("treeoflife_command_callback: [%b]\n", method->p, method->l);
   return 0;
 }
 
@@ -80,6 +152,7 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
       break;
     case MAGI_NODE_STATUS_OPERATIONAL:
       debug("TREEOFLIFE: node [%W] is now operational!\n", event->everip_addr, EVERIP_ADDRESS_LENGTH);
+      treeoflife_command_send_zone(tol_c, event->everip_addr);
       break;
     default:
       break;
@@ -105,6 +178,23 @@ static int module_init(void)
     return ENOMEM;
 
   hash_alloc(&g_tol->peers_addr, 8);
+
+  for (int i = 0; i < TOL_ZONE_COUNT; ++i)
+  {
+    everip_addr_copy(g_tol->zone[i].root);
+    g_tol->zone[i].binlen = 1;
+    memset(g_tol->zone[i].binrep, 0, TOL_ROUTE_LENGTH);
+  }
+
+  /* register with the system */
+  err = magi_melchior_register( everip_magi_melchior()
+                              , "tree"
+                              , treeoflife_command_callback
+                              , g_tol );
+  if (err) {
+    error("treeoflife: magi_melchior_register\n");
+    goto out;
+  }
 
   conduits_register( &conduit
                    , everip_conduits()
