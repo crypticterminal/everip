@@ -234,6 +234,9 @@ static int treeoflife_peer_send_update( uint16_t zoneid
 
   zone = &peer->ctx->zone[zoneid];
 
+  if (peer == zone->parent)
+    return EINVAL;
+
   /* okay, send address push */
   odict_alloc(&od, 8);
 
@@ -438,6 +441,10 @@ static int treeoflife_command_cb_update( struct treeoflife_csock *tol_c
 
   zone = &tol_c->zone[tmp_zoneid];
 
+  /* updates can only and should only come from nodes that are not our child */
+  if (peer->z[tmp_zoneid].is_my_child)
+    return EPROTO;
+
   ode = odict_lookup(rpc->in, "br");
   if (!ode || ode->type != ODICT_STRING) {
     err = EPROTO;
@@ -582,7 +589,7 @@ static int treeoflife_command_cb_child( struct treeoflife_csock *tol_c
       _p = le->data;
       if (_p->z[tmp_zoneid].is_my_child) {
         treeoflife_peer_send_aschild(tmp_zoneid, _p);
-      } else if (_p->is_onehop) {
+      } else if (_p->is_onehop && _p != zone->parent) {
         treeoflife_peer_send_update(tmp_zoneid, _p);
       }
     }
@@ -913,7 +920,6 @@ static void treeoflife_destructor(void *data)
   struct treeoflife_csock *tol_c = data;
   hash_flush( tol_c->peers_addr );
   tol_c->peers_addr = mem_deref( tol_c->peers_addr );
-
 }
 
 static int module_init(void)
