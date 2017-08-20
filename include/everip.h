@@ -260,8 +260,17 @@ struct magi_melchior_ticket;
 
 enum MAGI_MELCHIOR_RETURN_STATUS {
      MAGI_MELCHIOR_RETURN_STATUS_OK = 0
+   , MAGI_MELCHIOR_RETURN_STATUS_ERR
    , MAGI_MELCHIOR_RETURN_STATUS_TIMEDOUT
-   , MAGI_MELCHIOR_RETURN_STATUS_REJECTED
+};
+
+struct magi_melchior_rpc {
+  struct odict *in;
+  struct odict *out;
+  const uint8_t *everip_addr;
+
+  /* options */
+  bool is_routable;
 };
 
 typedef void (magi_melchior_h)( enum MAGI_MELCHIOR_RETURN_STATUS status

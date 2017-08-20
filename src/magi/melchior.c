@@ -33,8 +33,9 @@ struct magi_melchior_ticket {
   uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
   uint32_t ticket_id;
 
+  uint64_t sent_jiffies;
+
   struct odict *od_sent;
-  struct odict *od_recv;
 
   magi_melchior_h *callback;
   void *userdata;
@@ -152,6 +153,12 @@ out:
   return err;
 }
 
+static bool _magi_melchior_ticket_lookup(struct le *le, void *arg)
+{
+  struct magi_melchior_ticket *mmt = le->data;
+  return mmt->ticket_id == *(uint32_t *)arg;
+}
+
 static void magi_melchior_ticket_destructor(void *data)
 {
   struct magi_melchior_ticket *mmt = data;
@@ -159,7 +166,6 @@ static void magi_melchior_ticket_destructor(void *data)
   list_unlink(&mmt->le);
 
   mmt->od_sent = mem_deref( mmt->od_sent );
-  mmt->od_recv = mem_deref( mmt->od_recv );
 
   tmr_cancel(&mmt->tmr);
 }
@@ -207,6 +213,8 @@ int magi_melchior_send( struct magi_melchior *mm
   odict_entry_add(mmt->od_sent, "_i", ODICT_INT, mmt->ticket_id);
   odict_entry_add(mmt->od_sent, "_t", ODICT_STRING, &(struct pl){.p=(const char *)everip_addr,.l=EVERIP_ADDRESS_LENGTH});
   
+  mmt->sent_jiffies = tmr_jiffies();
+
   /* serialize, sign and send */
   err = magi_melchior_sss(mm, mmt->od_sent, everip_addr, is_routable);
   if (err)
@@ -218,14 +226,61 @@ out:
   return err;
 }
 
-static int magi_melchior_command_hello( struct odict *ret
-                                      , struct odict *input
-                                      , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] )
+static int magi_melchior_command_hello( struct magi_melchior_rpc *rpc
+                                      , void *arg )
 {
 
-  error("\n\nmagi_melchior_command_hello <%p><%p><%W>\n\n", ret, input, everip_addr, EVERIP_ADDRESS_LENGTH);
+  error("\n\nmagi_melchior_command_hello <%p><%p><%W>\n\n", rpc->in, rpc->out, rpc->everip_addr, EVERIP_ADDRESS_LENGTH);
 
   return 0;
+}
+
+static int magi_melchior_command_res_or_err( struct magi_melchior_rpc *rpc
+                                           , enum MAGI_MELCHIOR_RETURN_STATUS status
+                                           , void *arg )
+{
+  int err = 0;
+  const struct odict_entry *ode;
+  struct magi_melchior *mm = arg;
+  struct magi_melchior_ticket *mmt;
+
+  uint32_t ticket_id;
+
+  /* no reply */
+  rpc->out = NULL;
+
+  error("\n\n magi_melchior_command_res <%p><%p><%W>\n\n", rpc->in, rpc->out, rpc->everip_addr, EVERIP_ADDRESS_LENGTH);
+
+  /* pull-out ticket id */
+  ode = odict_lookup(rpc->in, "_i");
+  if (!ode || ode->type != ODICT_INT) {
+    err = EINVAL;
+    goto out;
+  }
+
+  ticket_id = (uint32_t)ode->u.integer;
+
+  /* lookup ticket id */
+  mmt = list_ledata(hash_lookup( mm->tickets
+                              , ticket_id
+                              , _magi_melchior_ticket_lookup
+                              , (void *)&ticket_id));
+  if (!mmt) {
+    err = EINVAL;
+    goto out;
+  }
+
+  mmt->callback( status
+               , mmt->od_sent
+               , rpc->in
+               , rpc->everip_addr
+               , tmr_jiffies() - mmt->sent_jiffies
+               , mmt->userdata );
+
+  mmt = mem_deref( mmt );
+
+out:
+  return err;
 }
 
 int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
@@ -294,6 +349,9 @@ int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
     int64_t ticket_id;
     struct pl ns_pre, ns_suf;
     const struct odict_entry *ode;
+    struct magi_melchior_rpc rpc_obj;
+
+    memset(&rpc_obj, 0, sizeof(rpc_obj));
 
     ode = odict_lookup(od, "_m");
     if (!ode || ode->type != ODICT_STRING)
@@ -311,13 +369,33 @@ int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
 
     odict_alloc(&od_ret, 8);
 
+    rpc_obj.in = od;
+    rpc_obj.out = od_ret;
+    rpc_obj.everip_addr = everip_addr;
+
     if (4 == ns_pre.l && !memcmp(ns_pre.p, "ever", 4)) {
       /* ever command */
       switch (ns_suf.l) {
         case 5:
           /* hello */
-          if (!memcmp(ns_suf.p, "hello", 5)) {
-            cmd_err = magi_melchior_command_hello(od_ret, od, everip_addr);
+          if (!memcmp(ns_suf.p, "hello", 5))
+          {
+            cmd_err = magi_melchior_command_hello(&rpc_obj, mm);
+          }
+          break;
+        case 3:
+          /* res, err */
+          if (!memcmp(ns_suf.p, "res", 3))
+          {
+            cmd_err = magi_melchior_command_res_or_err( &rpc_obj
+                                                      , MAGI_MELCHIOR_RETURN_STATUS_OK
+                                                      , mm);
+          } 
+          else if (!memcmp(ns_suf.p, "err", 3))
+          {
+            cmd_err = magi_melchior_command_res_or_err( &rpc_obj
+                                                      , MAGI_MELCHIOR_RETURN_STATUS_ERR
+                                                      , mm);
           }
           break;
         default:
@@ -329,21 +407,23 @@ int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
       goto out;
     }
 
-    odict_entry_add(od_ret, "_p", ODICT_INT, (int64_t)EVERIP_VERSION_PROTOCOL);
+    if (rpc_obj.out) {
+      odict_entry_add(rpc_obj.out, "_p", ODICT_INT, (int64_t)EVERIP_VERSION_PROTOCOL);
 
-    if (cmd_err) {
-      odict_entry_add(od_ret, "_m", ODICT_STRING, &(struct pl)PL("ever.err"));
-      odict_entry_add(od_ret, "_e", ODICT_INT, (int64_t)cmd_err);
-    } else {
-      odict_entry_add(od_ret, "_m", ODICT_STRING, &(struct pl)PL("ever.res"));
+      if (cmd_err) {
+        odict_entry_add(rpc_obj.out, "_m", ODICT_STRING, &(struct pl)PL("ever.err"));
+        odict_entry_add(rpc_obj.out, "_e", ODICT_INT, (int64_t)cmd_err);
+      } else {
+        odict_entry_add(rpc_obj.out, "_m", ODICT_STRING, &(struct pl)PL("ever.res"));
+      }
+
+      odict_entry_add(rpc_obj.out, "_i", ODICT_INT, ticket_id);
+      odict_entry_add(rpc_obj.out, "_t", ODICT_STRING, &(struct pl){.p=(const char *)everip_addr,.l=EVERIP_ADDRESS_LENGTH});
+
+      error("ODICT RES: %H\n", odict_debug, rpc_obj.out);
+
+      magi_melchior_sss(mm, rpc_obj.out, rpc_obj.everip_addr, false);
     }
-
-    odict_entry_add(od_ret, "_i", ODICT_INT, ticket_id);
-    odict_entry_add(od_ret, "_t", ODICT_STRING, &(struct pl){.p=(const char *)everip_addr,.l=EVERIP_ADDRESS_LENGTH});
-
-    error("ODICT RES: %H\n", odict_debug, od_ret);
-
-    magi_melchior_sss(mm, od_ret, everip_addr, false);
 
   }
 
