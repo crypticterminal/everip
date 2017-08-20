@@ -238,7 +238,7 @@ int magi_node_ledbat_recv( struct magi_node *mnode, struct mbuf *mb )
         goto out;
       }
 
-      (void)mbuf_write_mem(mbn, mb->buf + mb->end, end - mb->end);
+      (void)mbuf_write_mem(mbn, _mb->buf + _mb->end, end - _mb->end);
       mbn->pos = 0;
 
       mnode->mb = mbn;
@@ -249,7 +249,7 @@ int magi_node_ledbat_recv( struct magi_node *mnode, struct mbuf *mb )
 
     switch (frame.port) {
       case MAGI_LEDBAT_PORT_MELCHIOR:
-        magi_melchior_recv(everip_magi_melchior(), mb);
+        magi_melchior_recv(everip_magi_melchior(), _mb);
         break;
     }
 
