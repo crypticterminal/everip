@@ -216,6 +216,8 @@ static struct csock *_from_conduits( struct csock *csock
   if (next_header < TYPE_BASE) {
     /* IPv6 */
 
+    info("IPv6<%u>: %u\n", next_header, mbuf_get_left(cdata->mb));
+
     mbuf_advance(cdata->mb, -(WIRE_IPV6_HEADER_LENGTH));
 
     struct _wire_ipv6_header *ihdr = \
@@ -541,7 +543,8 @@ struct atfield *everip_atfield(void)
 
 int everip_addr_copy(uint8_t everip_addr[EVERIP_ADDRESS_LENGTH])
 {
-  return memcpy(everip_addr, everip.myaddr, EVERIP_ADDRESS_LENGTH);
+  memcpy(everip_addr, everip.myaddr, EVERIP_ADDRESS_LENGTH);
+  return 0;
 }
 
 
