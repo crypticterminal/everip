@@ -290,6 +290,8 @@ static void magi_node_destructor(void *data)
   list_unlink(&mnode->le);
   list_unlink(&mnode->le_idx_key);
   list_unlink(&mnode->le_idx_addr);
+
+  mnode->mb = mem_deref(mnode->mb);
 }
 
 struct magi_node *
