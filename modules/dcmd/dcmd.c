@@ -371,6 +371,12 @@ out:
   return err;
 }
 
+static int cmd_noise_debug(struct re_printf *pf, void *unused)
+{
+  (void)unused;
+  return noise_engine_debug(pf, everip_noise());
+}
+
 static int cmd_debug_action(struct re_printf *pf, void *arg)
 {
   int err = 0;
@@ -438,6 +444,8 @@ static const struct cmd debugcmdv[] = {
   {"at_bl", 0, CMD_PRM, "Add an EVER/IP Address to the Blacklist", cmd_atfield_action },
   {"at_wh", 0, CMD_PRM, "Add an EVER/IP Address to the Whitelist", cmd_atfield_action },
   {"at_rem", 0, CMD_PRM, "Remove an EVER/IP Address from any White/Black list", cmd_atfield_action },
+
+  {"noise", 0,      0, "Noise Engine status",            cmd_noise_debug },
 
   {"add_peer", '+', CMD_PRM, "Add a peer", cmd_peer_add },
 };

@@ -157,6 +157,30 @@ enum NOISE_TIMER_ON {
 
 #define NOISE_ENCRYPTED_LEN(plain_len) (plain_len + NOISE_AUTHTAG_LEN)
 
+
+int noise_engine_debug(struct re_printf *pf, void *arg)
+{
+  int err = 0;
+  struct sa laddr;
+  struct noise_engine *ne = arg;
+  uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
+
+  everip_addr_copy(everip_addr);
+
+  sa_set_in6(&laddr, everip_addr, 0);
+
+  err |= re_hprintf(pf, "[Noise Engine]\n");
+
+  err  = re_hprintf( pf, "■ Public Key\n");
+  err  = re_hprintf( pf, "→ %W\n", ne->si.public, NOISE_PUBLIC_KEY_LEN);
+  err  = re_hprintf( pf, "■ Authenticated EVER/IP Addresses\n");
+  err  = re_hprintf( pf, "→ %j\n", &laddr);
+
+  err |= re_hprintf(pf, "\n[END]\n");
+
+  return err;
+}
+
 static int noise_keypair_create( struct noise_keypair **keypairp
                                , struct noise_session *ns );
 
