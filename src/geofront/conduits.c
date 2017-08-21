@@ -51,13 +51,13 @@ int conduits_debug(struct re_printf *pf, const struct conduits *conduits)
 
   LIST_FOREACH(&conduits->condl, le) {
     c = le->data;
-    err  = re_hprintf( pf
-                     , "■ %s\t%s%s\t(%s)\n%H"
-                     , c->name
-                     , c->flags & CONDUIT_FLAG_BCAST ? "[BCAST]" : ""
-                     , c->flags & CONDUIT_FLAG_VIRTUAL ? "[VIRTUAL]" : ""
-                     , c->desc
-                     , c->debug_h, c->debug_h_arg );
+    err  |= re_hprintf( pf
+                      , "■ %s\t%s%s\t(%s)\n%H"
+                      , c->name
+                      , c->flags & CONDUIT_FLAG_BCAST ? "[BCAST]" : ""
+                      , c->flags & CONDUIT_FLAG_VIRTUAL ? "[VIRTUAL]" : ""
+                      , c->desc
+                      , c->debug_h, c->debug_h_arg );
     i++;
   }
 
