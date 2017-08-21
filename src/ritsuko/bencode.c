@@ -18,6 +18,11 @@
 #include <re.h>
 #include <everip.h>
 
+#if defined(WIN32) && !defined(PRId64 )
+#undef PRId64
+#define PRId64 "I64d"
+#endif
+
 static int encode_entry(struct re_printf *pf, const struct odict_entry *e)
 {
 	struct odict *array;
