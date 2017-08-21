@@ -21,7 +21,7 @@
 #define TOL_ZONE_COUNT 1
 #define TOL_ROUTE_LENGTH 16 /* 128 bytes */
 
-#define TOL_DHT_TIMEOUT_MS 5000
+#define TOL_DHT_TIMEOUT_MS 15000
 
 struct treeoflife_peer;
 struct treeoflife_csock;
@@ -1520,7 +1520,7 @@ static int _conduit_search( const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
                           , void *arg )
 {
   struct le *le;
-  struct treeoflife_dhti *dhti;
+  struct treeoflife_dhti *dhti = NULL;
   struct treeoflife_peer *peer = NULL;
   struct treeoflife_csock *tol_c = arg;
   struct treeoflife_zone *zone = &tol_c->zone[0];
@@ -1540,6 +1540,9 @@ static int _conduit_search( const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
   }
 
   if (dhti) {
+    info("FOUND KEY: %W\n", dhti->public_key, NOISE_PUBLIC_KEY_LEN);
+    info("FOUND ROUTE: %H\n", stack_debug, dhti->binrep);
+
     /* create new peer */
     _treeoflife_peer_create( &peer
                            , tol_c
@@ -1547,11 +1550,15 @@ static int _conduit_search( const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
     if (!peer)
       return 0;
 
+    memcpy(peer->z[0].binrep, dhti->binrep, TOL_ROUTE_LENGTH);
+    peer->z[0].binlen = dhti->binlen;
+
     /* initiate peer */
     conduit_peer_initiate( &peer->cp
                          , tol_c->conduit
                          , dhti->public_key
                          , true );
+    return 0;
   }
 
   if (!zone->parent)
@@ -1591,6 +1598,24 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
   }
 
   return 0;
+}
+
+static int _sendto_virtual( struct conduit_peer *peer
+                          , struct mbuf *mb
+                          , void *arg )
+{
+  int err = 0;
+  struct treeoflife_peer *tp;
+  struct treeoflife_csock *tol_c = arg;
+
+  tp = container_of(peer, struct treeoflife_peer, cp);
+
+  if (!tp || !tol_c)
+    return EINVAL;
+
+  info("VIRTUAL REQUEST TO [%W]@[%H]\n", peer->everip_addr, EVERIP_ADDRESS_LENGTH, stack_debug, tp->z[0].binrep);
+
+  return err;
 }
 
 static void treeoflife_destructor(void *data)
@@ -1652,6 +1677,10 @@ static int module_init(void)
   conduit_register_peer_create( conduit
                               , _peer_create
                               , NULL);
+
+  conduit_register_send_handler( conduit
+                               , _sendto_virtual
+                               , g_tol);
 
   conduit_register_debug_handler( conduit
                                 , _conduit_debug
