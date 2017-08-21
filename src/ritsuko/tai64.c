@@ -24,10 +24,13 @@
 #ifdef WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+
+/*
+winsock2 has it?
 typedef struct timeval {
     long tv_sec;
     long tv_usec;
-} timeval;
+} timeval;*/
 
 static int __gettimeofday(struct timeval * tp, struct timezone * tzp)
 {
