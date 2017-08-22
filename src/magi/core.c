@@ -373,11 +373,11 @@ magi_node_lookup_or_create( struct magi *magi
              , &mnode->le_idx_addr
              , mnode);
 
-  /* notify of new node */
-  (void)magi_node_status_update(mnode, MAGI_NODE_STATUS_CREATED);
-
   if (err) {
     mnode = mem_deref( mnode );
+  } else {
+    /* notify of new node */
+    (void)magi_node_status_update(mnode, MAGI_NODE_STATUS_CREATED);
   }
   return mnode;
 }
