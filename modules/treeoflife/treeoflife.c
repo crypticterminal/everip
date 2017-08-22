@@ -580,12 +580,6 @@ static int _treeoflife_peer_create( struct treeoflife_peer **peerp
   return 0;
 }
 
-static bool _peer_debug(struct le *le, void *arg)
-{
-  struct re_printf *pf = arg;
-  return false;
-}
-
 static int _conduit_debug(struct re_printf *pf, void *arg)
 {
   int err = 0;
