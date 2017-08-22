@@ -527,7 +527,7 @@ struct treeoflife_peer *_treeoflife_peer_lookup( struct treeoflife_csock *tol_c
                                 , (void *)my_everip));
 }
 
-static void peer_destructor(void *data)
+static void treeoflife_peer_destructor(void *data)
 {
   struct treeoflife_peer *peer = data;
 
@@ -560,7 +560,7 @@ static int _treeoflife_peer_create( struct treeoflife_peer **peerp
     return EALREADY;
   }
 
-  peer = mem_zalloc(sizeof(*peer), peer_destructor);
+  peer = mem_zalloc(sizeof(*peer), treeoflife_peer_destructor);
   if (!peer)
     return ENOMEM;
 
@@ -1430,7 +1430,7 @@ static int treeoflife_command_cb_zone( struct treeoflife_csock *tol_c
   peer->is_onehop = true;
 
   /* join chain check: */
-  if ( (rootcmp > 0) || (!rootcmp && tmp_height + weight < zone->height) )
+  if ( (rootcmp > 0) || (!rootcmp && tmp_height + weight <= zone->height) )
   {
     memcpy(zone->root, tmp_rootp, EVERIP_ADDRESS_LENGTH);
     zone->height = tmp_height + weight;
@@ -1572,6 +1572,7 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
                                , void *data
                                , void *arg )
 {
+  struct treeoflife_peer *peer = NULL;
   struct magi_e2e_event *event = data;
   struct treeoflife_csock *tol_c = arg;
 
@@ -1582,6 +1583,8 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
     case MAGI_NODE_STATUS_OFFLINE:
     case MAGI_NODE_STATUS_SEARCHING:
       debug("TREEOFLIFE: node [%W] has gone offline!\n", event->everip_addr, EVERIP_ADDRESS_LENGTH);
+      peer = _treeoflife_peer_lookup(tol_c, event->everip_addr);
+      peer = mem_deref(peer);
       break;
     case MAGI_NODE_STATUS_OPERATIONAL:
       debug("TREEOFLIFE: node [%W] is now operational!\n", event->everip_addr, EVERIP_ADDRESS_LENGTH);
