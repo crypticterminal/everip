@@ -205,10 +205,14 @@ struct magi_melchior_rpc;
 struct magi_melchior_ticket;
 
 enum MAGI_NODE_STATUS {
-     MAGI_NODE_STATUS_OFFLINE = 0
+     MAGI_NODE_STATUS_MINIMUM = -3
+   , MAGI_NODE_STATUS_REMOVAL = -2
+   , MAGI_NODE_STATUS_CREATED = -1
+   , MAGI_NODE_STATUS_OFFLINE = 0
    , MAGI_NODE_STATUS_SEARCHING
    , MAGI_NODE_STATUS_CONNECTED
    , MAGI_NODE_STATUS_OPERATIONAL
+   , MAGI_NODE_STATUS_MAXIMUM /* must be last! */
 };
 
 enum MAGI_EVENTDRIVER_WATCH {
@@ -287,6 +291,9 @@ int magi_node_everipaddr_copy( struct magi_node *mnode
 struct magi_node *
 magi_node_lookup_by_eipaddr( struct magi *magi
                            , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
+
+int magi_node_status_update( struct magi_node *mnode
+                           , enum MAGI_NODE_STATUS status );
 
 struct magi_node *
 magi_node_lookup_or_create( struct magi *magi
@@ -500,6 +507,8 @@ int noise_engine_recieve( struct noise_engine *ne
 
 int noise_engine_publickey_copy( struct noise_engine *ne
                                , uint8_t public_key[NOISE_PUBLIC_KEY_LEN] );
+
+int noise_engine_debug(struct re_printf *pf, void *arg);
 
 int noise_engine_init( struct noise_engine **nenginep, struct magi_eventdriver *ed);
 

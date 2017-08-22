@@ -134,11 +134,22 @@ static uint64_t ledbat_callback_h(ledbat_callback_arguments *a, void *arg)
       break;
     }
     case LEDBAT_ON_STATE_CHANGE:
-      /*if (a->u1.state == LEDBAT_STATE_CONNECT) {
-        magi_node_ledbat_sock_set(mnode, NULL);
-      }*/
-      if (a->u1.state != LEDBAT_STATE_EOF)
-        break;
+    {
+      bool _break = true;
+      switch (a->u1.state) {
+        case LEDBAT_STATE_EOF:
+          _break = false;
+          break;
+        case LEDBAT_STATE_CONNECT:
+          mnode = ledbat_sock_userdata_get( a->socket );
+          magi_node_status_update(mnode, MAGI_NODE_STATUS_CONNECTED);
+          break;
+        default:
+          break;
+      }
+      if (_break)
+        break;      
+    }
       /* @FALLTHROUGH@ */
     case LEDBAT_ON_ERROR:
     {

@@ -42,6 +42,8 @@ struct magi_node {
   uint8_t public_key[NOISE_PUBLIC_KEY_LEN];
   uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
 
+  enum MAGI_NODE_STATUS status;
+
 
   struct odict *hello_pkt;
   uint64_t last_hello;
@@ -57,31 +59,6 @@ struct magi_ledbat_frame {
   size_t len;
 };
 
-static uint64_t ledbat_callback_h(ledbat_callback_arguments *a, void *arg )
-{
-  struct magi_node *mnode = arg;
-
-  if (!mnode)
-    return 0;
-
-  debug("ledbat_callback_h:\n");
-
-  switch (a->callback_type) {
-    case LEDBAT_ON_ERROR:
-      debug("ledbat_callback_h: error: %d\n", a->u1.error_code);
-      ledbat_sock_reconnect(mnode->ls);
-      break;
-    case LEDBAT_ON_STATE_CHANGE:
-      debug("ledbat_callback_h: state: %d\n", a->u1.state);
-      break;
-    default:
-      debug("ledbat_callback_h: unknown: %d\n", a->callback_type);
-      break;
-  }
-
-  return 0;
-}
-
 int magi_node_ledbat_sock_set( struct magi_node *mnode
                              , struct ledbat_sock *lsock )
 {
@@ -92,8 +69,11 @@ int magi_node_ledbat_sock_set( struct magi_node *mnode
 
   mnode->ls = mem_deref(mnode->ls);
 
-  if (lsock)
+  if (lsock) {
     mnode->ls = lsock;
+  } else {
+    (void)magi_node_status_update(mnode, MAGI_NODE_STATUS_OFFLINE);
+  }
 
   return 0;
 }
@@ -286,7 +266,9 @@ static bool _magi_node_lookup_addr(struct le *le, void *arg)
 static void magi_node_destructor(void *data)
 {
   struct magi_node *mnode = data;
-  (void)mnode;
+  
+  (void)magi_node_status_update(mnode, MAGI_NODE_STATUS_REMOVAL);
+
   list_unlink(&mnode->le);
   list_unlink(&mnode->le_idx_key);
   list_unlink(&mnode->le_idx_addr);
@@ -307,6 +289,36 @@ magi_node_lookup_by_eipaddr( struct magi *magi
                                  , _magi_node_lookup_addr
                                  , (void *)everip_addr));
   return mnode;
+}
+
+int magi_node_status_update( struct magi_node *mnode
+                           , enum MAGI_NODE_STATUS status )
+{
+  bool push_event = true;
+  struct magi_e2e_event event;
+
+  memset(&event, 0, sizeof(event));
+
+  if (!mnode)
+    return EINVAL;
+
+  if (status <= MAGI_NODE_STATUS_MINIMUM || status >= MAGI_NODE_STATUS_MAXIMUM)
+    return EINVAL;
+
+  if (mnode->status == status)
+    push_event = false;
+
+  mnode->status = status;
+
+  event.status = mnode->status;
+  event.everip_addr = mnode->everip_addr;
+
+  if (push_event)
+    magi_eventdriver_handler_run( mnode->ctx->ed
+                                , MAGI_EVENTDRIVER_WATCH_E2E
+                                , &event );
+
+  return 0;
 }
 
 struct magi_node *
@@ -362,6 +374,7 @@ magi_node_lookup_or_create( struct magi *magi
              , mnode);
 
   /* notify of new node */
+  (void)magi_node_status_update(mnode, MAGI_NODE_STATUS_CREATED);
 
   if (err) {
     mnode = mem_deref( mnode );
@@ -376,19 +389,13 @@ static void magi_maintenance_hello_cb( enum MAGI_MELCHIOR_RETURN_STATUS status
                                      , uint64_t timediff
                                      , void *userdata)
 {
-  struct magi_e2e_event event;
   struct magi_node *mnode = userdata;
   debug("magi_maintenance_hello_cb\n");
 
   if (status != MAGI_MELCHIOR_RETURN_STATUS_OK)
     return; /* ignore for now */
 
-  event.status = MAGI_NODE_STATUS_OPERATIONAL;
-  event.everip_addr = everip_addr;
-
-  magi_eventdriver_handler_run( mnode->ctx->ed
-                              , MAGI_EVENTDRIVER_WATCH_E2E
-                              , &event );
+  magi_node_status_update(mnode, MAGI_NODE_STATUS_OPERATIONAL);
 
 }
 
@@ -407,6 +414,9 @@ static void magi_maintenance_cb(void *data)
     mnode = le->data;
     if (!mnode->ls) {
       error("ATTEMPTING TO CONNECT VIA LEDBAT\n");
+      
+      magi_node_status_update(mnode, MAGI_NODE_STATUS_SEARCHING);
+
       ledbat_sock_alloc(&mnode->ls, everip_ledbat());
       if (!mnode->ls)
         continue;
