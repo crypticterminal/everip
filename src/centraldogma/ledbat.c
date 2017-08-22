@@ -199,6 +199,9 @@ static int _ledbat_sock_write(struct ledbat_sock *lsock)
   if (!lsock)
     return EINVAL;
 
+  if (!lsock->sock)
+    return ENOTCONN;
+
   if (!lsock->iovec_count)
     goto out;
 
@@ -310,9 +313,9 @@ static uint64_t callback_on_error(utp_callback_arguments *a)
   struct ledbat_sock *lsock;
   lsock = utp_get_userdata(a->socket);
 
-  error("LEDBAT Error: %s\n", utp_error_code_names[a->u1.error_code]);
+  /*error("LEDBAT Error: %s\n", utp_error_code_names[a->u1.error_code]);*/
 
-  if (!lsock || !lsock->callback) {
+  if (!lsock) {
     utp_close( a->socket );
     return 0;
   }
