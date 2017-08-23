@@ -215,6 +215,27 @@ enum MAGI_NODE_STATUS {
    , MAGI_NODE_STATUS_MAXIMUM /* must be last! */
 };
 
+static inline const char * magi_node_status_tostr(enum MAGI_NODE_STATUS status)
+{
+  switch (status) {
+    case MAGI_NODE_STATUS_REMOVAL:
+      return "REMOVAL";
+    case MAGI_NODE_STATUS_CREATED:
+      return "CREATED";
+    case MAGI_NODE_STATUS_OFFLINE:
+      return "OFFLINE";
+    case MAGI_NODE_STATUS_SEARCHING:
+      return "SEARCHING";
+    case MAGI_NODE_STATUS_CONNECTED:
+      return "CONNECTED";
+    case MAGI_NODE_STATUS_OPERATIONAL:
+      return "OPERATIONAL";
+    default:
+      break;
+  }
+  return "UNKNOWN";
+}
+
 enum MAGI_EVENTDRIVER_WATCH {
      MAGI_EVENTDRIVER_WATCH_E2E = 0
    , MAGI_EVENTDRIVER_WATCH_NOISE
