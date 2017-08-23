@@ -39,7 +39,7 @@ static inline struct list * _grab_handler( struct magi_eventdriver *ed
   if (!ed)
     return NULL;
 
-  if (handler > MAGI_EVENTDRIVER_WATCH_MAXIMUM)
+  if (handler >= MAGI_EVENTDRIVER_WATCH_MAXIMUM)
     return NULL;
   else
     return &ed->handlers[handler];
