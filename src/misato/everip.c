@@ -130,6 +130,9 @@ static uint64_t ledbat_callback_h(ledbat_callback_arguments *a, void *arg)
 
       ledbat_sock_userdata_set(a->socket, mnode );
       magi_node_ledbat_sock_set(mnode, a->socket);
+
+      (void)magi_node_status_update(mnode, MAGI_NODE_STATUS_CONNECTED);
+
       /*BREAKPOINT;*/
       break;
     }
@@ -267,15 +270,18 @@ static struct csock *_from_conduits( struct csock *csock
 
 }
 
-static int magi_event_watcher_h(enum MAGI_EVENTDRIVER_WATCH type, void *data, void *arg)
+static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
+                               , void *data
+                               , void *arg )
 {
-  struct noise_event *event = data;
-
+  struct sa laddr;
   if (!data)
     return 0;
 
-  if (type == MAGI_EVENTDRIVER_WATCH_NOISE) {
+  if (type == MAGI_EVENTDRIVER_WATCH_NOISE)
+  {
     struct magi_node *mnode = NULL;
+    struct noise_event *event = data;
     uint8_t public_key[NOISE_PUBLIC_KEY_LEN];
 
     switch (event->type) {
@@ -308,6 +314,16 @@ static int magi_event_watcher_h(enum MAGI_EVENTDRIVER_WATCH type, void *data, vo
         break;
     }
   }
+  else if (type == MAGI_EVENTDRIVER_WATCH_E2E)
+  {
+    struct magi_e2e_event *event = data;
+
+    sa_init(&laddr, AF_INET6);
+    sa_set_in6(&laddr, event->everip_addr, 0);
+
+    info("[MAGI][%j] STATUS CHANGED TO %s\n", &laddr, magi_node_status_tostr(event->status));
+
+  }
 out:
   return 0;
 }
@@ -339,6 +355,15 @@ int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
   /* register events */
   err = magi_eventdriver_handler_register( everip.eventdriver
                                          , MAGI_EVENTDRIVER_WATCH_NOISE
+                                         , magi_event_watcher_h
+                                         , NULL );
+  if (err) {
+    error("everip_init: magi_eventdriver_handler_register\n");
+    return err;
+  }
+
+  err = magi_eventdriver_handler_register( everip.eventdriver
+                                         , MAGI_EVENTDRIVER_WATCH_E2E
                                          , magi_event_watcher_h
                                          , NULL );
   if (err) {
