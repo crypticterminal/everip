@@ -195,7 +195,7 @@ int magi_node_ledbat_recv( struct magi_node *mnode, struct mbuf *mb )
 
     pos = mnode->mb->pos;
 
-    err = magi_node_ledbat_recv_decode(&frame, mb);
+    err = magi_node_ledbat_recv_decode(&frame, mnode->mb);
     if (err) {
       if (err == ENODATA) {
         mnode->mb->pos = pos;
@@ -230,6 +230,12 @@ int magi_node_ledbat_recv( struct magi_node *mnode, struct mbuf *mb )
     switch (frame.port) {
       case MAGI_LEDBAT_PORT_MELCHIOR:
         magi_melchior_recv(everip_magi_melchior(), _mb);
+        break;
+      case MAGI_LEDBAT_PORT_TREEOFLIFE:
+        treeoflife_ledbat_recv( _mb );
+        break;
+      default:
+        error("magi_node_ledbat_recv: unknown port: %u\n", frame.port);
         break;
     }
 

@@ -244,7 +244,8 @@ enum MAGI_EVENTDRIVER_WATCH {
 };
 
 enum MAGI_LEDBAT_PORT {
-     MAGI_LEDBAT_PORT_MELCHIOR  = 0
+     MAGI_LEDBAT_PORT_MELCHIOR = 0
+   , MAGI_LEDBAT_PORT_TREEOFLIFE
    , MAGI_LEDBAT_PORT_MAXIMUM /* must be last! */
 };
 
@@ -843,6 +844,12 @@ size_t stack_layer_add(uint8_t *binrep, uint64_t nodeid);
 int stack_step(struct stack_needle *needle);
 int stack_linf_diff(uint8_t left[ROUTE_LENGTH], uint8_t right[ROUTE_LENGTH], int *places);
 int stack_debug(struct re_printf *pf, const uint8_t *binrep);
+
+/*
+ * Tree of Life
+ */
+
+int treeoflife_ledbat_recv( struct mbuf *mb );
 
 /*
  * Modules
