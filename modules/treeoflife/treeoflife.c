@@ -1560,7 +1560,7 @@ static int treeoflife_command_callback( struct magi_melchior_rpc *rpc
 
 int treeoflife_ledbat_recv( struct mbuf *mb )
 {
-  error("tol: [%u][%W]\n", mbuf_get_left(_mb), mbuf_buf(_mb), mbuf_get_left());
+  error("tol: [%u][%W]\n", mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));
   return 0;
 }
 
