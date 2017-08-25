@@ -377,12 +377,6 @@ int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
     return err;
   }
 
-  if (skey) {
-    noise_si_private_key_set( &everip.noise->si, skey );
-    /* create signing keys */
-    cryptosign_skpk_fromcurve25519(everip.noise->sign_keys, skey);
-  }
-
   if (!addr_calc_pubkeyaddr( everip.myaddr, everip.noise->si.public )) {
     error("everip_init: Invalid Identity\n");
     return EINVAL;
@@ -505,6 +499,10 @@ skip_tun:
 
   module_preload("treeoflife");
 
+#if defined(HAVE_GENDO)
+  GENDO_MID;
+#endif
+
   return 0;
 }
 
@@ -512,69 +510,73 @@ skip_tun:
 void everip_close(void)
 {
 
-    /* handles sendto, etc. */
-    everip.ledbat = mem_deref(everip.ledbat);
+#if defined(HAVE_GENDO)
+  GENDO_DEINIT;
+#endif
 
-    everip.magi_melchior = mem_deref(everip.magi_melchior);
-    everip.magi = mem_deref( everip.magi );
+  /* handles sendto, etc. */
+  everip.ledbat = mem_deref(everip.ledbat);
 
-    everip.netevent = mem_deref(everip.netevent);
+  everip.magi_melchior = mem_deref(everip.magi_melchior);
+  everip.magi = mem_deref( everip.magi );
 
-    /* reverse from init */
-    everip.tunif = mem_deref(everip.tunif);
-    everip.commands = mem_deref(everip.commands);
-    everip.net = mem_deref(everip.net);
-    everip.atfield = mem_deref(everip.atfield);
+  everip.netevent = mem_deref(everip.netevent);
 
-    everip.conduits = mem_deref(everip.conduits);
-    everip.noise = mem_deref(everip.noise);
-    everip.eventdriver = mem_deref(everip.eventdriver);
+  /* reverse from init */
+  everip.tunif = mem_deref(everip.tunif);
+  everip.commands = mem_deref(everip.commands);
+  everip.net = mem_deref(everip.net);
+  everip.atfield = mem_deref(everip.atfield);
+
+  everip.conduits = mem_deref(everip.conduits);
+  everip.noise = mem_deref(everip.noise);
+  everip.eventdriver = mem_deref(everip.eventdriver);
 }
 
 
 struct network *everip_network(void)
 {
-    return everip.net;
+  return everip.net;
 }
 
 struct magi *everip_magi(void)
 {
-    return everip.magi;
+  return everip.magi;
 }
 
 struct magi_melchior *everip_magi_melchior(void)
 {
-    return everip.magi_melchior;
+  return everip.magi_melchior;
 }
 
 struct magi_eventdriver *everip_eventdriver(void)
 {
-    return everip.eventdriver;
+  return everip.eventdriver;
 }
 
 struct ledbat *everip_ledbat(void)
 {
-    return everip.ledbat;
+  return everip.ledbat;
 }
 
 struct commands *everip_commands(void)
 {
-    return everip.commands;
+  return everip.commands;
 }
 
 struct noise_engine *everip_noise(void)
 {
-    return everip.noise;
+  return everip.noise;
 }
 
 struct conduits *everip_conduits(void)
 {
-    return everip.conduits;
+  return everip.conduits;
 }
 
 struct atfield *everip_atfield(void)
 {
-    return everip.atfield;
+  return everip.atfield;
 }
 
 int everip_addr_copy(uint8_t everip_addr[EVERIP_ADDRESS_LENGTH])
@@ -587,11 +589,11 @@ int everip_addr_copy(uint8_t everip_addr[EVERIP_ADDRESS_LENGTH])
 
 void everip_udpport_set(uint16_t port)
 {
-    everip.udp_port = port;
+  everip.udp_port = port;
 }
 
 uint16_t everip_udpport_get(void)
 {
-    return everip.udp_port;
+  return everip.udp_port;
 }
 

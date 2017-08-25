@@ -216,7 +216,7 @@ $(TEST_BIN):	$(STATICLIB) $(TEST_OBJS)
 	@echo "  LD      $@"
 	$(HIDE)$(CXX) $(LFLAGS) $(TEST_OBJS) \
 		-L. \
-		-l$(PROJECT) $(LIBS_PRE) -l$(PROJECT) $(LIBRE_PATH)/libre.a $(LIBSODIUM_PATH)/lib/libsodium.a $(LIBS) $(TEST_LIBS) -o $@
+		-l$(PROJECT) $(LIBS_PRE) -l$(PROJECT) $(LIBRE_SO)/libre.a $(LIBSODIUM_PATH)/lib/libsodium.a $(LIBS) $(TEST_LIBS) -o $@
 
 $(BUILD)/%.o: %.c $(BUILD) Makefile $(APP_MK)
 	@echo "  CC      $@"

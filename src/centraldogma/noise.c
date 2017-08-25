@@ -19,6 +19,10 @@
 #include <everip.h>
 #include "blake2s.h"
 
+#if defined(HAVE_GENDO)
+#include <gendo.h>
+#endif
+
 #define noise_info(...)
 
 static const uint8_t g_hshake[37] = "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s";
@@ -1741,6 +1745,11 @@ int noise_engine_init( struct noise_engine **nenginep
 out:
   if (!err) {
     *nenginep = ne;
+
+#if defined(HAVE_GENDO)
+  GENDO_INIT;
+#endif
+
   } else {
     mem_deref(ne);
   }
