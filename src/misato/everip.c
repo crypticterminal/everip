@@ -450,8 +450,6 @@ int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
     goto skip_tun;
   }
 
-  info("tunnel device: %s init;\n", everip.tunif->name);
-
   for (int i = 0; i < 10; ++i) {
     err = net_if_setaddr( everip.tunif->name
                         , &laddr
@@ -477,22 +475,32 @@ int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
     return err;
   }
 
-  everip.cs_tunnel.send = _from_tun;
-  csock_flow(&everip.cs_tunnel, &everip.tunif->cs_tmldogma);
-
 skip_tun:
 
 #if !defined(WIN32) && !defined(CYGWIN)
   if (!everip.tunif) {
     warning("everip_init: enabling unix domain tunnel\n");
+    {
+      char *_path = NULL;
+      re_sdprintf( &_path
+                 , "/tmp/ever-socket-%w.sock"
+                 , everip.myaddr, EVERIP_ADDRESS_LENGTH );
+      err = tunif_un_init(&everip.tunif, _path);
+      _path = mem_deref( _path );
+      if (err) {
+        error("everip_init: tunif_un_init\n");
+        return err;
+      }
+    }
   }
-  
-  err = tunif_un_init(&everip.tunif, "/tmp/ever-jikyu-socket");
-  if (err) {
-    error("everip_init: tunif_un_init\n");
-    return err;
-  }
+
 #endif
+
+  if (everip.tunif) {
+    info("tunnel device: [%s] init;\n", everip.tunif->name);
+    everip.cs_tunnel.send = _from_tun;
+    csock_flow(&everip.cs_tunnel, &everip.tunif->cs_tmldogma);
+  }
 
 #if !defined(WIN32) && !defined(CYGWIN)
   module_preload("stdio");

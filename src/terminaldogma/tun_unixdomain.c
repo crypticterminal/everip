@@ -53,6 +53,8 @@ static struct csock *_from_terminaldogma( struct csock *csock
   ((uint16_t*)(void *)mbuf_buf(mb))[0] = 0;
   ((uint16_t*)(void *)mbuf_buf(mb))[1] = 7680;
 
+  /*error("attempting send to: %s\n", tun->claddr.sun_path);*/
+
   len = sizeof(struct sockaddr_un);
   n = sendto( tun_pub->fd
             , mbuf_buf(mb)
@@ -81,6 +83,8 @@ static void tun_read_handler(int flags, void *arg)
 
   if (!mb)
     return;
+
+  /*error("got somethin: [%s]\n", tun->claddr.sun_path);*/
 
   len = sizeof(struct sockaddr_un);
   n = recvfrom( tun->pub.fd
@@ -185,6 +189,8 @@ int tunif_un_init( struct tunif **tunifp
     err = errno;
     goto err;
   }
+  
+  str_ncpy(tunif->pub.name, socket_path, TUN_IFNAMSIZ);
 
   net_sockopt_blocking_set(tunif->pub.fd, false);
 
