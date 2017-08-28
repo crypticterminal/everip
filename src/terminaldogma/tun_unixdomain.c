@@ -87,6 +87,7 @@ static void tun_read_handler(int flags, void *arg)
   /*error("got somethin: [%s]\n", tun->claddr.sun_path);*/
 
   len = sizeof(struct sockaddr_un);
+  memset(&tun->claddr, 0, len);
   n = recvfrom( tun->pub.fd
               , mb->buf + EVER_OUTWARD_MBE_POS
               , mb->size - EVER_OUTWARD_MBE_POS
