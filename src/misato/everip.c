@@ -483,6 +483,18 @@ int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
 skip_tun:
 
 #if !defined(WIN32) && !defined(CYGWIN)
+  if (!everip.tunif) {
+    warning("everip_init: enabling unix domain tunnel\n");
+  }
+  
+  err = tunif_un_init(&everip.tunif, "/tmp/ever-jikyu-socket");
+  if (err) {
+    error("everip_init: tunif_un_init\n");
+    return err;
+  }
+#endif
+
+#if !defined(WIN32) && !defined(CYGWIN)
   module_preload("stdio");
 #else
   module_preload("wincon");

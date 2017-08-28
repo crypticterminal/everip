@@ -825,11 +825,11 @@ int atfield_debug(struct re_printf *pf, const struct atfield *atfield);
 struct tunif {
   int fd;
   char name[TUN_IFNAMSIZ];
-
   struct csock cs_tmldogma;
 };
 
 int tunif_init( struct tunif **tunifp );
+int tunif_un_init( struct tunif **tunifp, const char *socket_path );
 
 /*
  * Stacks

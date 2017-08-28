@@ -23,6 +23,10 @@ ifeq ($(OS),linux)
 SRCS	+= terminaldogma/tun_linux.c
 endif
 
+ifeq ($(OS),darwin) || ($(OS),linux)
+SRCS	+= terminaldogma/tun_unixdomain.c
+endif
+
 #misato (application)
 SRCS	+= misato/everip.c
 SRCS	+= misato/cmd.c
