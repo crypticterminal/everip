@@ -23,7 +23,7 @@ ifeq ($(OS),linux)
 SRCS	+= terminaldogma/tun_linux.c
 endif
 
-ifeq ($(OS),darwin) || ($(OS),linux)
+ifeq ($(OS),$(filter $(OS),darwin linux))
 SRCS	+= terminaldogma/tun_unixdomain.c
 endif
 

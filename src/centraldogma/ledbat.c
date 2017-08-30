@@ -222,7 +222,8 @@ static int _ledbat_sock_write(struct ledbat_sock *lsock)
     mbuf_advance(mb, sent);
 
     if (0 == mbuf_get_left(mb)) {
-      lsock->iovec_pos = ++lsock->iovec_pos % LEDBAT_BUF_LIMIT;
+      ++lsock->iovec_pos;
+      lsock->iovec_pos = lsock->iovec_pos % LEDBAT_BUF_LIMIT;
       lsock->iovec_count--;
       lsock->bufs[i] = mem_deref(mb);
       continue;

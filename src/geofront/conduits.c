@@ -88,6 +88,7 @@ static struct csock *_noise_h( struct csock *csock
                              , enum CSOCK_TYPE type
                              , void *data )
 {
+  uint32_t _id;
   struct conduit_peer *peer = container_of(csock, struct conduit_peer, csock);
   struct mbuf *mb = data;
   struct noise_event *event = data;
@@ -136,8 +137,9 @@ static struct csock *_noise_h( struct csock *csock
               goto out;
 
             list_unlink( &peer->le_addr );
+            _id = *(uint8_t *)peer->everip_addr;
             hash_append( peer->conduit->ctx->hash_cp_addr
-                       , *(uint32_t *)(void *)peer->everip_addr
+                       , _id
                        , &peer->le_addr
                        , peer );
 
@@ -326,6 +328,7 @@ struct conduit_peer *
 conduits_conduit_peer_search( struct conduits *conduits
                             , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] )
 {
+  uint32_t _id;
   struct le *le;
   struct conduit *c;
   struct conduit_peer *cp = NULL;
@@ -335,8 +338,9 @@ conduits_conduit_peer_search( struct conduits *conduits
 
   error("conduits_conduit_peer_search %W\n", everip_addr, EVERIP_ADDRESS_LENGTH);
 
+  _id = *(uint8_t *)everip_addr;
   cp = list_ledata(hash_lookup( conduits->hash_cp_addr
-                              , *(uint32_t *)(void *)everip_addr
+                              , _id
                               , _conduits_conduit_peer_lookup
                               , (void *)everip_addr));
 
