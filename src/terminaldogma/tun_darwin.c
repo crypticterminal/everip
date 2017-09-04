@@ -201,9 +201,9 @@ int tunif_init( struct tunif **tunifp )
 
   tunif->cs_tmldogma.send = _from_terminaldogma;
 
-    *tunifp = tunif;
+  *tunifp = tunif;
 
-    return err;
+  return err;
 
 err:
   tunif = mem_deref(tunif);
