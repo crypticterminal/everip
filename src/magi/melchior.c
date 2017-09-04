@@ -374,6 +374,13 @@ int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
 
     memset(&rpc_obj, 0, sizeof(rpc_obj));
 
+    ode = odict_lookup(od, "_p");
+    if (!ode || ode->type != ODICT_INT)
+      goto out;
+
+    if (ode->u.integer != EVERIP_VERSION_PROTOCOL)
+      goto out;
+
     ode = odict_lookup(od, "_m");
     if (!ode || ode->type != ODICT_STRING)
       goto out;
