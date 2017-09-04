@@ -193,7 +193,7 @@ endif
 $(BIN):	$(APP_OBJS)
 #ifneq ($(GPROF),)
 	@echo "  LDS     $@"
-	$(HIDE)$(LD) $(LFLAGS) $(APP_LFLAGS) $^ $(LIBS_PRE) $(LIBRE_SO)/libre.a $(LIBSODIUM_PATH)/lib/libsodium.a $(LIBS) -o $@
+	$(HIDE)$(CXX) $(LFLAGS) $(APP_LFLAGS) $^ $(LIBS_PRE) $(LIBRE_SO)/libre.a $(LIBSODIUM_PATH)/lib/libsodium.a $(LIBS) -o $@
 #else
 #	@echo "  LD      $@"
 #	$(HIDE)$(LD) $(LFLAGS) $(APP_LFLAGS) $^ \
