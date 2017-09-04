@@ -35,37 +35,26 @@
 #include <net/if.h>
 
 static struct csock *_from_terminaldogma( struct csock *csock
-							       		, struct mbuf *mb )
+                                        , enum CSOCK_TYPE type
+                                        , void *data )
 {
-	int err = 0;
-	ssize_t n;
+  ssize_t n;
+  struct tunif *tun = container_of(csock, struct tunif, cs_tmldogma);
+  struct mbuf *mb = data;
 
-	if (!csock || !mb)
-		return NULL;
+  if (!csock || type != CSOCK_TYPE_DATA_MB || !mb)
+    return NULL;
 
-	struct tunif *tun = container_of(csock, struct tunif, tmldogma_cs);
-
-	if (mbuf_get_left(mb) < 4) {
-		return NULL;
-	}
+  if (mbuf_get_left(mb) < 4) {
+    return NULL;
+  }
 
   ((uint16_t*)(void *)mbuf_buf(mb))[0] = 0;
   ((uint16_t*)(void *)mbuf_buf(mb))[1] = arch_htobe16(0x86DD);
 
-  /*error("going back out...%u[%w]\n", mbuf_get_left(mb), mbuf_buf(mb), 8);*/
-
   n = write(tun->fd, mbuf_buf(mb), mbuf_get_left(mb));
-	/*error("WROTE %d\n", n);*/
 
 	if (n < 0) {
-		err = errno;
-
-		if (EAGAIN == err)
-			goto out;
-#ifdef EWOULDBLOCK
-		if (EWOULDBLOCK == err)
-			goto out;
-#endif
 		goto out;
 	}
 
@@ -112,7 +101,7 @@ static void tun_read_handler(int flags, void *arg)
 		goto out;
 	}
 
-    csock_forward(&tun->tmldogma_cs, mb);
+  csock_forward(&tun->cs_tmldogma, CSOCK_TYPE_DATA_MB, mb);
 
  out:
 	mem_deref(mb);
@@ -165,9 +154,13 @@ int tunif_init( struct tunif **tunifp )
         goto err;
 	}
 
-	tunif->tmldogma_cs.send = _from_terminaldogma;
+	tunif->cs_tmldogma.send = _from_terminaldogma;
 
-    *tunifp = tunif;
 err:
-    return err;
+  if (err) {
+    tunif = mem_deref( tunif );
+  } else {
+    *tunifp = tunif;
+  }
+  return err;
 }

@@ -20,7 +20,6 @@
 
 #define __USE_MISC
 #include <arpa/inet.h>
-#include <linux/if_arp.h>
 #include <linux/if_packet.h>
 #include <netinet/ether.h>
 #include <stdio.h>
