@@ -15,6 +15,8 @@
  *
  */
 
+#define _DEFAULT_SOURCE
+
 #include <re.h>
 #include <everip.h>
 
