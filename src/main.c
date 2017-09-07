@@ -67,20 +67,6 @@ int main(int argc, char *argv[])
   uint8_t secret_key[32];
   uint16_t port_default = 1988;
 
-  (void)re_fprintf( stderr
-          , "\nStarting connectFree(R) EVER/IP(R) for %s/%s [%s]\n"
-            "Copyright 2016-2017 Kristopher Tate and connectFree Corporation.\n"
-            "All Rights Reserved. Protected by International Patent Treaties.\n"
-            "More information: select \"Legal Information\" from the main menu.\n"
-          , sys_os_get(), sys_arch_get()
-          , EVERIP_VERSION);
-
-#if defined(GITVERSION)
-  (void)re_fprintf(stderr, "GIT Version: " GITVERSION "\n");
-#endif
-
-  (void)re_fprintf(stderr, "\n");
-
 #if 0 && !defined(WIN32) && !defined(CYGWIN)
   if(getuid() != 0 || geteuid() != 0) {
     error( "EVER/IP(R) requires you to be a super user on %s/%s.\n"
@@ -126,6 +112,23 @@ int main(int argc, char *argv[])
   (void)argc;
   (void)argv;
 #endif
+
+  if (err)
+    goto out;
+
+  (void)re_fprintf( stderr
+          , "\nStarting connectFree(R) EVER/IP(R) for %s/%s [%s]\n"
+            "Copyright 2016-2017 Kristopher Tate and connectFree Corporation.\n"
+            "All Rights Reserved. Protected by International Patent Treaties.\n"
+            "More information: select \"Legal Information\" from the main menu.\n"
+          , sys_os_get(), sys_arch_get()
+          , EVERIP_VERSION);
+
+#if defined(GITVERSION)
+  (void)re_fprintf(stderr, "GIT Version: " GITVERSION "\n");
+#endif
+
+  (void)re_fprintf(stderr, "\n");
 
   err = everip_init( secret_key, port_default );
   if (err) {
