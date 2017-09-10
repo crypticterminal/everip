@@ -1336,8 +1336,11 @@ int noise_session_new( struct noise_session **sessionp
     return EINVAL;
 
   /* check to make sure that key does not already exist */
-  if (noise_engine_find_session_bykey(ne, channel_lock, public_key))
+  session = noise_engine_find_session_bykey(ne, channel_lock, public_key);
+  if (session) {
+    *sessionp = session;
     return EALREADY;
+  }
 
   /* check to make sure it is not self! */
   if (!memcmp(ne->si.public, public_key, NOISE_PUBLIC_KEY_LEN))

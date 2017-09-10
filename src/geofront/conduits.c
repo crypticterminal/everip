@@ -180,6 +180,9 @@ int conduit_peer_initiate( struct conduit_peer *peer
                          , (uintptr_t)conduit
                          , public_key
                          , NULL /* preshared_key */ );
+  if (err == EALREADY)
+    err = 0;
+
   if (err)
     return err;
 
@@ -348,8 +351,6 @@ conduits_conduit_peer_search( struct conduits *conduits
     /* oh boy, here we go! */
     LIST_FOREACH(&conduits->condl, le) {
       c = le->data;
-      if (!(c->flags & CONDUIT_FLAG_VIRTUAL))
-        continue;
       if (!c->search_h)
         continue;
       c->search_h(everip_addr, c->search_h_arg);
