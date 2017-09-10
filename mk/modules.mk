@@ -2,7 +2,7 @@ MODULES   += dcmd
 MODULES   += null
 MODULES   += udp
 MODULES   += treeoflife
-#MODULES   += eth
+MODULES   += web
 
 #ui
 ifeq ($(OS),win32)

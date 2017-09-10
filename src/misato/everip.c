@@ -516,7 +516,9 @@ skip_tun:
   module_preload("null");
   module_preload("udp");
   module_preload("eth");
+  module_preload("web");
 
+  /* virtual */
   module_preload("treeoflife");
 
 #if defined(HAVE_GENDO)
