@@ -28,9 +28,20 @@ struct ws_client {
 
   struct this_module *ctx;
 
+  struct hash *peers;
+
+};
+
+struct wsc_peer {
+  struct conduit_peer cp;
+  struct le le;
+  struct ws_client *wsc;
+  uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
 };
 
 struct this_module {
+  struct conduit *conduit;
+
   struct ws_client *wsc;
   struct tmr tmr_retry;
 };
@@ -43,9 +54,68 @@ static const char g_useragent[] = "ConnectFree(R) EVER/IP(R) v" EVERIP_VERSION;
 
 static void module_wsc_tmr_retry_h( void *arg );
 
+/* ---- wsc peer layer ----- */
+
+static bool wsc_peer_hash_h(struct le *le, void *arg)
+{
+  struct wsc_peer *wp = le->data;
+  return !memcmp(wp->everip_addr, (const uint8_t *)arg, EVERIP_ADDRESS_LENGTH);
+}
+
+static void wsc_peer_destructor(void *data)
+{
+  struct wsc_peer *wp = data;
+  /* x:start process cp */
+  conduit_peer_deref(&wp->cp);
+  /* x:end process cp */
+  list_unlink(&wp->le);
+
+  error("wsc_peer_destructor\n");
+
+}
+
+static int wsc_peer_alloc( struct wsc_peer **wpp
+                         , struct ws_client *wsc
+                         , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
+                         , uint8_t *new_peer
+                         )
+{
+  int err = 0;
+  struct wsc_peer *wp = NULL;
+
+  if (!wsc || !everip_addr)
+    return EINVAL;
+
+  wp = list_ledata(hash_lookup( wsc->peers
+                                   , *(uint32_t *)(void *)everip_addr
+                                   , wsc_peer_hash_h
+                                   , (void *)everip_addr ));
+
+  if (wp) {
+    *new_peer = 0;
+    *wpp = wp;
+    return err;
+  }
+
+  wp = mem_zalloc(sizeof(*wp), wsc_peer_destructor);
+  if (!wp)
+    return ENOMEM;
+
+  *new_peer = 1;
+
+  wp->cp.conduit = wsc->ctx->conduit;
+  wp->wsc = wsc;
+  memcpy(wp->everip_addr, everip_addr, EVERIP_ADDRESS_LENGTH);
+  hash_append(wsc->peers, *(uint32_t *)(void *)everip_addr, &wp->le, wp);
+
+  *wpp = wp;
+
+  return err;
+}
+
 /* ---- websocket client layer ----- */
 
-static int wsc_register_send( struct ws_client *wsc )
+static int wsc_send_register( struct ws_client *wsc )
 {
   int err = 0;
   struct mbuf *mb = NULL;
@@ -115,6 +185,44 @@ out:
   return err;
 }
 
+static int wsc_send_search( struct ws_client *wsc
+                          , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] )
+{
+  int err = 0;
+  struct mbuf *mb = NULL;
+
+  if (!wsc || !wsc->wc)
+    return EINVAL;
+
+  mb = mbuf_alloc(512);
+  if (!mb)
+    return ENOMEM;
+
+  /* header = 114U */
+  /* [SWITCH/TYPE 16U][EVERIP 16B/128U] */
+  mbuf_set_pos(mb, 0);
+
+  /* switch/type */
+  mbuf_write_u16(mb, arch_htobe16(2)); /* 2 = search */
+
+  mbuf_write_mem(mb, everip_addr, EVERIP_ADDRESS_LENGTH);
+
+  /* top of packet */
+  mbuf_set_pos(mb, 0);
+
+  err = websock_send( wsc->wc
+                    , WEBSOCK_BIN
+                    , "%b"
+                    , mbuf_buf(mb), mbuf_get_left(mb)
+                    );
+  if (err)
+    goto out;
+
+out:
+  mb = mem_deref( mb );
+  return err;
+}
+
 static void ws_handle_shutdown(void *arg)
 {
   (void)arg;
@@ -127,7 +235,7 @@ static void wsc_handler_estab(void *arg)
 
   error("wsc_handler_estab: CONNECTED!\n");
 
-  err = wsc_register_send( wsc );
+  err = wsc_send_register( wsc );
 
   if (err) {
     error("wsc_handler_estab: %m\n", err);
@@ -135,15 +243,70 @@ static void wsc_handler_estab(void *arg)
 }
 
 
-static void wsc_handler_recv(const struct websock_hdr *hdr,
-             struct mbuf *mb, void *arg)
+static void wsc_handler_recv( const struct websock_hdr *hdr
+                            , struct mbuf *mb, void *arg )
 {
-  struct ws_client *wsc = arg;
   int err = 0;
+  uint16_t type = 0;
+  struct ws_client *wsc = arg;
+
+  uint8_t *in_everip = NULL;
+  uint8_t *in_pubkey = NULL;
 
   (void)wsc;
 
-/* out:*/
+
+  error("wsc_handler_recv: %w\n", mbuf_buf(mb), mbuf_get_left(mb));
+
+  if (mbuf_get_left(mb) < 2)
+    goto out;
+
+  type = arch_betoh16(mbuf_read_u16(mb));
+
+  switch (type) {
+    case 256: /* server search response */
+    {
+      int err_proto = 0;
+      uint8_t new_peer = 0;
+      struct wsc_peer *wp = NULL;
+
+      if (mbuf_get_left(mb) < (16 + 32))
+        goto out;
+      in_everip = mbuf_buf(mb);
+      mbuf_advance(mb, 16);
+      in_pubkey = mbuf_buf(mb);
+
+      err_proto = wsc_peer_alloc( &wp
+                                , wsc
+                                , in_everip
+                                , &new_peer
+                                );
+      if (err_proto || !wp)
+        goto out;
+
+      if (new_peer) {
+        err_proto = conduit_peer_initiate( &wp->cp
+                                         , wsc->ctx->conduit
+                                         , in_pubkey
+                                         , true );
+        if (err_proto) {
+          wp = mem_deref( wp );
+        }
+      }
+
+      break;
+    }
+    case 512: /* server forward response */
+    {
+      error("got 512\n");
+      break;
+    }
+    default:
+      goto out;
+  }
+
+
+ out:
   if (err) {
     error("wsc_handler_recv: %m\n", err);
   }
@@ -171,12 +334,17 @@ static void wsc_destructor(void *data)
 {
   struct ws_client *wsc = data;
 
+  hash_flush( wsc->peers );
+  wsc->peers = mem_deref( wsc->peers );
+
   wsc->wc = mem_deref(wsc->wc);
   websock_shutdown(wsc->ws);
   mem_deref(wsc->ws);
 
   wsc->http = mem_deref(wsc->http);
   wsc->dnsc = mem_deref(wsc->dnsc);
+
+  wsc->ctx->wsc = NULL;
 }
 
 static int wsc_alloc(struct ws_client **wscp, struct this_module *mod )
@@ -185,6 +353,7 @@ static int wsc_alloc(struct ws_client **wscp, struct this_module *mod )
   char uri[256];
   struct sa dns;
   struct ws_client *wsc = NULL;
+  uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
 
   if (!wscp || !mod)
     return EINVAL;
@@ -194,6 +363,16 @@ static int wsc_alloc(struct ws_client **wscp, struct this_module *mod )
     return ENOMEM;
 
   wsc->ctx = mod;
+
+  /* get everip */
+  everip_addr_copy(everip_addr);
+
+  if (everip_addr[0] != 0xfc) {
+    err = EINVAL;
+    goto out;
+  }
+
+  hash_alloc(&wsc->peers, 16);
 
   /* dns */
   err |= sa_set_str(&dns, "8.8.8.8", 53);
@@ -217,8 +396,8 @@ static int wsc_alloc(struct ws_client **wscp, struct this_module *mod )
   /* create url that includes our everip address */
   (void)re_snprintf( uri
                    , sizeof(uri)
-                   , "http://160.16.126.97/v1/dock/%s"
-                   , "fc46623a198dcb63febd3e658e40ca6f");
+                   , "http://160.16.126.97/v1/dock/%w"
+                   , everip_addr, EVERIP_ADDRESS_LENGTH);
 
   /* websocket connect */
   err = websock_connect( &wsc->wc, wsc->ws
@@ -243,6 +422,75 @@ out:
 
 /* ---- conduit module layer ----- */
 
+static int _conduit_search( const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
+                          , void *arg )
+{
+  struct this_module *mod = arg;
+
+  error("websocket: _conduit_search;\n");
+
+  if (!mod->wsc)
+    goto out;
+
+  wsc_send_search(mod->wsc, everip_addr);
+
+out:
+  return 0;
+}
+
+/*static int _conduit_peer_create( struct conduit_peer **peerp
+                                , struct pl *key
+                                , struct pl *host
+                                , void *arg )
+{
+  struct this_module *mod = arg;
+
+  (void)key;
+  (void)host;
+  (void)mod;
+
+  *peerp = NULL;
+
+  return 0;
+}*/
+
+static int _conduit_sendto_outside( struct conduit_peer *peer
+                                   , struct mbuf *mb
+                                   , void *arg )
+{
+  int err = 0;
+  size_t mb_pos = 0;
+  struct wsc_peer *wp;
+  struct this_module *mod = arg;
+
+  error("_conduit_sendto_outside\n");
+
+  if (!peer || !mod)
+    return EINVAL;
+
+  wp = container_of(peer, struct wsc_peer, cp);
+
+  error("INSIDE\n");
+
+  mbuf_advance(mb, -(size_t)(2 /* switch */ + 16 /* everip */));
+
+  mb_pos = mb->pos;
+
+  mbuf_write_u16(mb, arch_htobe16(3)); /* 3 = send packet */
+
+  mbuf_write_mem(mb, wp->everip_addr, EVERIP_ADDRESS_LENGTH);
+
+  mbuf_set_pos(mb, mb_pos);
+  
+  websock_send( wp->wsc->wc
+              , WEBSOCK_BIN
+              , "%b"
+              , mbuf_buf(mb), mbuf_get_left(mb)
+              );
+
+  return err;
+}
+
 static void module_wsc_tmr_retry_h( void *arg )
 {
   int err = 0;
@@ -256,6 +504,7 @@ static void module_destructor(void *data)
 {
   struct this_module *mod = data;
   mod->wsc = mem_deref(mod->wsc);
+  g_mod->conduit = mem_deref( g_mod->conduit );
   tmr_cancel(&mod->tmr_retry);
 }
 
@@ -270,6 +519,33 @@ static int module_init(void)
   err = wsc_alloc(&g_mod->wsc, g_mod);
   if (err)
     goto out;
+
+
+  conduits_register( &g_mod->conduit
+                   , everip_conduits()
+                   , 0
+                   , "WEB"
+                   , "Websocket"
+                   );
+
+  if (!g_mod->conduit) {
+    err = ENOMEM;
+    goto out;
+  }
+
+  mem_ref( g_mod->conduit );
+
+/*  conduit_register_peer_create( g_mod->conduit
+                              , _conduit_peer_create
+                              , g_mod);*/
+
+  conduit_register_search_handler( g_mod->conduit
+                                 , _conduit_search
+                                 , g_mod );
+
+  conduit_register_send_handler( g_mod->conduit
+                               , _conduit_sendto_outside
+                               , g_mod);
 
 out:
   if (err) {
