@@ -64,6 +64,7 @@ static const struct cmd cmdv[] = {
 int main(int argc, char *argv[])
 {
   int err;
+  uint8_t utility = 0;
   uint8_t secret_key[32];
   uint16_t port_default = 1988;
 
@@ -114,6 +115,9 @@ int main(int argc, char *argv[])
 #endif
 
   if (err)
+    goto out;
+
+  if (utility)
     goto out;
 
   (void)re_fprintf( stderr
