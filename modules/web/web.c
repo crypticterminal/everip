@@ -18,20 +18,30 @@
 #include <re.h>
 #include <everip.h>
 
+struct this_module;
+
 struct ws_client {
   struct dnsc *dnsc;
   struct websock *ws;
   struct http_cli *http;
   struct websock_conn *wc;
+
+  struct this_module *ctx;
+
 };
 
 struct this_module {
   struct ws_client *wsc;
+  struct tmr tmr_retry;
 };
 
 static struct this_module *g_mod = NULL;
 
+#define WEB_RECONNECT_TIMEOUT_MS 4000
+
 static const char g_useragent[] = "ConnectFree(R) EVER/IP(R) v" EVERIP_VERSION;
+
+static void module_wsc_tmr_retry_h( void *arg );
 
 /* ---- websocket client layer ----- */
 
@@ -144,10 +154,17 @@ static void wsc_handler_close(int err, void *arg)
 {
   struct ws_client *wsc = arg;
 
-  (void)wsc;
+  tmr_start( &wsc->ctx->tmr_retry
+           , WEB_RECONNECT_TIMEOUT_MS
+           , module_wsc_tmr_retry_h
+           , wsc->ctx
+           );
 
   /* translate error code */
   error("wsc_handler_close: %m\n", err);
+
+  wsc = mem_deref(wsc);
+
 }
 
 static void wsc_destructor(void *data)
@@ -162,19 +179,21 @@ static void wsc_destructor(void *data)
   wsc->dnsc = mem_deref(wsc->dnsc);
 }
 
-static int wsc_alloc(struct ws_client **wscp)
+static int wsc_alloc(struct ws_client **wscp, struct this_module *mod )
 {
   int err = 0;
   char uri[256];
   struct sa dns;
   struct ws_client *wsc = NULL;
 
-  if (!wscp)
+  if (!wscp || !mod)
     return EINVAL;
 
   wsc = mem_zalloc(sizeof(*wsc), wsc_destructor);
   if (!wsc)
     return ENOMEM;
+
+  wsc->ctx = mod;
 
   /* dns */
   err |= sa_set_str(&dns, "8.8.8.8", 53);
@@ -224,10 +243,20 @@ out:
 
 /* ---- conduit module layer ----- */
 
+static void module_wsc_tmr_retry_h( void *arg )
+{
+  int err = 0;
+  struct this_module *mod = arg;
+  if (!mod)
+    return;
+  err = wsc_alloc(&mod->wsc, mod);
+}
+
 static void module_destructor(void *data)
 {
   struct this_module *mod = data;
   mod->wsc = mem_deref(mod->wsc);
+  tmr_cancel(&mod->tmr_retry);
 }
 
 static int module_init(void)
@@ -238,7 +267,7 @@ static int module_init(void)
   if (!g_mod)
     return ENOMEM;
 
-  err = wsc_alloc(&g_mod->wsc);
+  err = wsc_alloc(&g_mod->wsc, g_mod);
   if (err)
     goto out;
 
