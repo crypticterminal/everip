@@ -49,6 +49,22 @@ static void signal_handler(int sig)
   main_goodbye();
 }
 
+static void close_timeout_handler(void *arg)
+{
+  (void)arg;
+  re_cancel();
+}
+
+static void re_main_timeout(uint32_t timeout_ms)
+{
+  struct tmr tmr;
+  tmr_init(&tmr);
+  tmr_start(&tmr, timeout_ms, close_timeout_handler, NULL);
+  debug("main: %ums until shutdown...\n", timeout_ms);
+  re_main(signal_handler);
+  tmr_cancel(&tmr);
+}
+
 static int cmd_quit(struct re_printf *pf, void *unused)
 {
   (void)pf;
@@ -153,6 +169,10 @@ int main(int argc, char *argv[])
   everip_close();
   debug("main: unloading modules..\n");
   mod_close();
+
+  /* give modules up to 500ms to close things down... */
+  re_main_timeout(500);
+
   libre_close();
 
   /* Check for memory leaks */
