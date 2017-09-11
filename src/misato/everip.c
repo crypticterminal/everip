@@ -190,6 +190,16 @@ static struct csock *_from_tun( struct csock *csock
     return NULL; /* toss */
   }
 
+  /* handle packets to self */
+  if (!memcmp(ihdr->dst, everip.myaddr, EVERIP_ADDRESS_LENGTH)) {
+    mbuf_advance(mb, -4);
+    /* back out on where you came */
+    csock_forward( csock
+                 , CSOCK_TYPE_DATA_MB
+                 , mb );
+    return NULL;
+  }
+
   next_header = ihdr->next_header;
 
   cp_selected = conduits_conduit_peer_search( everip.conduits
