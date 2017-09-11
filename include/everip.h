@@ -625,7 +625,7 @@ static inline void conduit_peer_deref(struct conduit_peer *peer)
 {
   csock_stop(&peer->csock);
   list_unlink(&peer->le_addr);
-  peer->ns = mem_deref( peer->ns );
+  /*peer->ns = mem_deref( peer->ns );*/
 }
 
 int conduit_peer_encrypted_send( struct conduit_peer *cp
