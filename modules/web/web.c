@@ -70,7 +70,7 @@ static void wsc_peer_destructor(void *data)
   /* x:end process cp */
   list_unlink(&wp->le);
 
-  error("wsc_peer_destructor\n");
+  /*error("wsc_peer_destructor\n");*/
 
 }
 
@@ -233,7 +233,7 @@ static void wsc_handler_estab(void *arg)
   struct ws_client *wsc = arg;
   int err = 0;
 
-  error("wsc_handler_estab: CONNECTED!\n");
+  /*error("wsc_handler_estab: CONNECTED!\n");*/
 
   err = wsc_send_register( wsc );
 
@@ -244,10 +244,11 @@ static void wsc_handler_estab(void *arg)
 
 
 static void wsc_handler_recv( const struct websock_hdr *hdr
-                            , struct mbuf *mb, void *arg )
+                            , struct mbuf *_mb, void *arg )
 {
   int err = 0;
   uint16_t type = 0;
+  struct mbuf *mb = NULL;
   struct ws_client *wsc = arg;
 
   uint8_t *in_everip = NULL;
@@ -256,7 +257,21 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
   (void)wsc;
 
 
-  error("wsc_handler_recv: %w\n", mbuf_buf(mb), mbuf_get_left(mb));
+  if (mbuf_get_left(mb) > 1500)
+    goto out;
+
+  mb = mbuf_alloc( EVER_OUTWARD_MBE_LENGTH * 2 );
+  if (!mb)
+    goto out;
+
+  mb->pos = EVER_OUTWARD_MBE_POS;
+  mb->end = EVER_OUTWARD_MBE_POS;
+
+  mbuf_write_mem(mb, mbuf_buf(_mb), mbuf_get_left(_mb));
+
+  mb->pos = EVER_OUTWARD_MBE_POS;
+
+  /*error("wsc_handler_recv: %w\n", mbuf_buf(mb), mbuf_get_left(mb));*/
 
   if (mbuf_get_left(mb) < 2)
     goto out;
@@ -298,7 +313,26 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
     }
     case 512: /* server forward response */
     {
-      error("got 512\n");
+      /* [SWITCH 2B][EVERIP 16B][MSG] */
+      int err_proto = 0;
+      uint8_t new_peer = 0;
+      struct wsc_peer *wp = NULL;
+
+      in_everip = mbuf_buf(mb);
+      mbuf_advance(mb, 16);
+
+      err_proto = wsc_peer_alloc( &wp
+                                , wsc
+                                , in_everip
+                                , &new_peer
+                                );
+      if (err_proto || !wp)
+        goto out;
+
+      if (conduit_incoming(wsc->ctx->conduit, &wp->cp, mb) && new_peer) {
+        wp = mem_deref( wp );
+      }
+
       break;
     }
     default:
@@ -307,6 +341,9 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
 
 
  out:
+  if (mb) {
+    mb = mem_deref(mb);
+  }
   if (err) {
     error("wsc_handler_recv: %m\n", err);
   }
@@ -324,7 +361,7 @@ static void wsc_handler_close(int err, void *arg)
            );
 
   /* translate error code */
-  error("wsc_handler_close: %m\n", err);
+  debug("wsc_handler_close: %m\n", err);
 
   wsc = mem_deref(wsc);
 
@@ -427,7 +464,7 @@ static int _conduit_search( const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
 {
   struct this_module *mod = arg;
 
-  error("websocket: _conduit_search;\n");
+  debug("websocket: _conduit_search;\n");
 
   if (!mod->wsc)
     goto out;
@@ -463,14 +500,14 @@ static int _conduit_sendto_outside( struct conduit_peer *peer
   struct wsc_peer *wp;
   struct this_module *mod = arg;
 
-  error("_conduit_sendto_outside\n");
+  /*debug("_conduit_sendto_outside\n");*/
 
   if (!peer || !mod)
     return EINVAL;
 
   wp = container_of(peer, struct wsc_peer, cp);
 
-  error("INSIDE\n");
+  /*error("INSIDE [%u]%w\n", mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));*/
 
   mbuf_advance(mb, -(size_t)(2 /* switch */ + 16 /* everip */));
 
@@ -481,6 +518,8 @@ static int _conduit_sendto_outside( struct conduit_peer *peer
   mbuf_write_mem(mb, wp->everip_addr, EVERIP_ADDRESS_LENGTH);
 
   mbuf_set_pos(mb, mb_pos);
+
+  /*error("WEBSOCKET: [%u]%w\n", mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));*/
   
   websock_send( wp->wsc->wc
               , WEBSOCK_BIN
