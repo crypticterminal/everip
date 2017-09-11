@@ -1121,6 +1121,10 @@ static void noise_session_tmr_zero(void *arg)
   ns->keypair_now = mem_deref( ns->keypair_now );
   ns->keypair_then = mem_deref( ns->keypair_then );
   ns->keypair_next = mem_deref( ns->keypair_next );
+
+  /* noise implementation is now safe enough to decref after tmr_zero */
+  ns = mem_deref( ns );
+
 }
 
 static void noise_session_tmr_hs_new(void *arg)
