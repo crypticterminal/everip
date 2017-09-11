@@ -380,13 +380,6 @@ static inline struct csock *csock_next(struct csock *csock, enum CSOCK_TYPE type
   return NULL;
 }
 
-static inline void csock_flow(struct csock *c_a, struct csock *c_b)
-{
-  if (!c_a || !c_b) return;
-  c_a->adj = c_b;
-  c_b->adj = c_a;
-}
-
 static inline void csock_stop(struct csock *c)
 {
   if (!c) return;
@@ -394,6 +387,17 @@ static inline void csock_stop(struct csock *c)
     c->adj->adj = NULL;
   }
   c->adj = NULL;
+}
+
+static inline void csock_flow(struct csock *c_a, struct csock *c_b)
+{
+  if (!c_a || !c_b) return;
+
+  csock_stop(c_a);
+  csock_stop(c_b);
+
+  c_a->adj = c_b;
+  c_b->adj = c_a;
 }
 
 /*
@@ -625,7 +629,7 @@ static inline void conduit_peer_deref(struct conduit_peer *peer)
 {
   csock_stop(&peer->csock);
   list_unlink(&peer->le_addr);
-  /*peer->ns = mem_deref( peer->ns );*/
+  peer->ns = NULL;
 }
 
 int conduit_peer_encrypted_send( struct conduit_peer *cp
