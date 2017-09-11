@@ -136,7 +136,7 @@ static int wsc_send_register( struct ws_client *wsc )
   mb->pos = 114;
 
   /* write useragent */
-  err = mbuf_printf(mb, "%s", g_useragent);
+  err = mbuf_printf(mb, "%s (%s/%s)", g_useragent, sys_os_get(), sys_arch_get());
   if (err)
     goto out;
 
@@ -441,7 +441,8 @@ static int wsc_alloc(struct ws_client **wscp, struct this_module *mod )
                         , wsc_handler_estab
                         , wsc_handler_recv
                         , wsc_handler_close, wsc
-                        , "User-Agent: %s\r\n", g_useragent
+                        , "User-Agent: %s (%s/%s)\r\n"
+                        , g_useragent, sys_os_get(), sys_arch_get()
                         );
   if (err)
     goto out;
