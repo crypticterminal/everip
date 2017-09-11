@@ -299,16 +299,15 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
       if (err_proto || !wp)
         goto out;
 
-      if (new_peer) {
-        err_proto = conduit_peer_initiate( &wp->cp
-                                         , wsc->ctx->conduit
-                                         , in_pubkey
-                                         , true );
-        if (err_proto) {
-          wp = mem_deref( wp );
-        }
-      }
 
+      err_proto = conduit_peer_initiate( &wp->cp
+                                       , wsc->ctx->conduit
+                                       , in_pubkey
+                                       , true );
+
+      if (err_proto && new_peer) {
+        wp = mem_deref( wp );
+      }
       break;
     }
     case 512: /* server forward response */
