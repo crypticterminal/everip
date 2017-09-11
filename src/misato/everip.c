@@ -230,7 +230,7 @@ static struct csock *_from_conduits( struct csock *csock
   if (next_header < TYPE_BASE) {
     /* IPv6 */
 
-    info("IPv6<%u>: %u\n", next_header, mbuf_get_left(cdata->mb));
+    /*info("IPv6<%u>: %u\n", next_header, mbuf_get_left(cdata->mb));*/
 
     mbuf_advance(cdata->mb, -(WIRE_IPV6_HEADER_LENGTH));
 

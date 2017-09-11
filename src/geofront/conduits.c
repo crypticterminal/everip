@@ -339,7 +339,7 @@ conduits_conduit_peer_search( struct conduits *conduits
   if (!conduits || !everip_addr)
     return NULL;
 
-  error("conduits_conduit_peer_search %W\n", everip_addr, EVERIP_ADDRESS_LENGTH);
+  /*error("conduits_conduit_peer_search %W\n", everip_addr, EVERIP_ADDRESS_LENGTH);*/
 
   _id = *(uint8_t *)everip_addr;
   cp = list_ledata(hash_lookup( conduits->hash_cp_addr
