@@ -362,7 +362,7 @@ static void wsc_handler_close(int err, void *arg)
   /* translate error code */
   debug("wsc_handler_close: %m\n", err);
 
-  wsc = mem_deref(wsc);
+  /*wsc->ctx->wsc = mem_deref(wsc);*/
 
 }
 
@@ -536,7 +536,18 @@ static void module_wsc_tmr_retry_h( void *arg )
   struct this_module *mod = arg;
   if (!mod)
     return;
+
+  mod->wsc = mem_deref(mod->wsc);
+
   err = wsc_alloc(&mod->wsc, mod);
+
+  if (err) {
+    tmr_start( &mod->tmr_retry
+             , WEB_RECONNECT_TIMEOUT_MS
+             , module_wsc_tmr_retry_h
+             , mod
+             );
+  }
 }
 
 static void module_destructor(void *data)
