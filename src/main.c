@@ -22,6 +22,9 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#ifdef HAVE_SIGNAL
+#include <signal.h>
+#endif
 #ifdef HAVE_GETOPT
 #include <getopt.h>
 #endif
@@ -38,6 +41,13 @@
 static void signal_handler(int sig)
 {
   static bool term = false;
+
+#ifdef HAVE_SIGNAL
+  if (sig == SIGPIPE) {
+    debug("signal_handler: SIGPIPE\n");
+    return; /* ignore SIGPIPE */
+  }
+#endif
 
   if (term) {
     mod_close();
