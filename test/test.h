@@ -160,6 +160,8 @@ int test_noise(void);
 int test_everip(void);
 int test_magi(void);
 
+int test_crypto_blake2s(void);
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -18,6 +18,8 @@
 /* note: origionally put into the public domain by Markku-Juhani O. Saarinen */
 
 #include "blake2s.h"
+#include <re.h>
+#include <everip.h>
 #include <sodium.h> /* use sodium for clearing memory, et cetera */
 #include <string.h>
 
@@ -113,8 +115,10 @@ int blake2s_init(blake2s_ctx *ctx, size_t outlen,
 
   sodium_memzero(ctx, sizeof(*ctx));
 
-  if (outlen == 0 || outlen > 32 || keylen > 32)
-    return -1; // illegal parameters
+  if (outlen == 0 || outlen > 32 || keylen > 32) {
+    BREAKPOINT;
+    return EINVAL; // illegal parameters
+  }
 
   for (i = 0; i < 8; i++) // state, "param block"
     ctx->h[i] = blake2s_iv[i];
@@ -187,7 +191,7 @@ int blake2s(void *out, size_t outlen,
   blake2s_ctx ctx;
 
   if (blake2s_init(&ctx, outlen, key, keylen))
-    return -1;
+    return EINVAL;
   blake2s_update(&ctx, in, inlen);
   blake2s_final(&ctx, out);
 
@@ -206,10 +210,11 @@ void blake2s_hmac( uint8_t *out
   int i;
   uint8_t o_key[BLAKE2S_BLOCKBYTES] = { 0 };
   uint8_t i_key[BLAKE2S_BLOCKBYTES] = { 0 };
-  uint8_t i_hash[BLAKE2S_OUTBYTES];
+  uint8_t i_hash[BLAKE2S_OUTBYTES] = { 0 };
 
   if (keylen > BLAKE2S_BLOCKBYTES) {
-    blake2s_init(&ctx, BLAKE2S_OUTBYTES, key, keylen);
+    blake2s_init(&ctx, BLAKE2S_OUTBYTES, NULL, 0);
+    blake2s_update(&ctx, key, keylen);
     blake2s_final(&ctx, o_key);
     memcpy(i_key, o_key, BLAKE2S_OUTBYTES);
   } else {
@@ -222,11 +227,13 @@ void blake2s_hmac( uint8_t *out
     i_key[i] ^= 0x36;
   }
 
-  blake2s_init(&ctx, BLAKE2S_OUTBYTES, i_key, BLAKE2S_BLOCKBYTES);
+  blake2s_init(&ctx, BLAKE2S_OUTBYTES, NULL, 0);
+  blake2s_update(&ctx, i_key, BLAKE2S_BLOCKBYTES);
   blake2s_update(&ctx, in, inlen);
   blake2s_final(&ctx, i_hash);
 
-  blake2s_init(&ctx, BLAKE2S_OUTBYTES, o_key, BLAKE2S_BLOCKBYTES);
+  blake2s_init(&ctx, BLAKE2S_OUTBYTES, NULL, 0);
+  blake2s_update(&ctx, o_key, BLAKE2S_BLOCKBYTES);
   blake2s_update(&ctx, i_hash, BLAKE2S_OUTBYTES);
   blake2s_final(&ctx, i_hash);
 
@@ -234,5 +241,4 @@ void blake2s_hmac( uint8_t *out
   sodium_memzero(o_key, BLAKE2S_BLOCKBYTES);
   sodium_memzero(i_key, BLAKE2S_BLOCKBYTES);
   sodium_memzero(i_hash, BLAKE2S_OUTBYTES);
-
 }

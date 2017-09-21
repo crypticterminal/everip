@@ -310,7 +310,8 @@ static void _mix_hash( uint8_t hash[NOISE_HASH_LEN]
                      , size_t src_len)
 {
   blake2s_ctx ctx;
-  blake2s_init(&ctx, NOISE_HASH_LEN, hash, NOISE_HASH_LEN);
+  blake2s_init(&ctx, NOISE_HASH_LEN, NULL, 0);
+  blake2s_update(&ctx, hash, NOISE_HASH_LEN);
   blake2s_update(&ctx, src, src_len);
   blake2s_final(&ctx, hash);
 }
@@ -1737,7 +1738,8 @@ int noise_engine_init( struct noise_engine **nenginep
          , g_hshake
          , sizeof(g_hshake));
 
-  blake2s_init(&ctx, NOISE_HASH_LEN, ne->hshake_chaining_key, NOISE_HASH_LEN);
+  blake2s_init(&ctx, NOISE_HASH_LEN, NULL, 0);
+  blake2s_update(&ctx, ne->hshake_chaining_key, NOISE_HASH_LEN);
   blake2s_update(&ctx, g_ident, sizeof(g_ident));
   blake2s_final(&ctx, ne->hshake_hash);
 
