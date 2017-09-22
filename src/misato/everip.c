@@ -334,6 +334,28 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
     info("[MAGI][%j] STATUS CHANGED TO %s\n", &laddr, magi_node_status_tostr(event->status));
 
   }
+  else if (type == MAGI_EVENTDRIVER_WATCH_NETEVENT)
+  {
+    struct netevent_event *event = data;
+
+    switch(event->type) {
+      case NETEVENT_EVENT_INIT:
+        info("[NETEVENT] INIT\n");
+        break;
+      case NETEVENT_EVENT_CLOSE:
+        info("[NETEVENT] CLOSE\n");
+        break;
+      case NETEVENT_EVENT_DEV_UP:
+      case NETEVENT_EVENT_DEV_DOWN:
+        info( "[NETEVENT] IF [%u(%s)] is %s\n"
+           , event->if_index
+           , event->if_name
+           , event->type == NETEVENT_EVENT_DEV_UP ? "UP" : "DOWN");
+         break;
+    }
+
+  }
+
 out:
   return 0;
 }
@@ -374,6 +396,15 @@ int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
 
   err = magi_eventdriver_handler_register( everip.eventdriver
                                          , MAGI_EVENTDRIVER_WATCH_E2E
+                                         , magi_event_watcher_h
+                                         , NULL );
+  if (err) {
+    error("everip_init: magi_eventdriver_handler_register\n");
+    return err;
+  }
+
+  err = magi_eventdriver_handler_register( everip.eventdriver
+                                         , MAGI_EVENTDRIVER_WATCH_NETEVENT
                                          , magi_event_watcher_h
                                          , NULL );
   if (err) {
@@ -442,7 +473,7 @@ int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
     return err;
   }
 
-  err = netevent_init( &everip.netevent );
+  err = netevent_init( &everip.netevent, everip.eventdriver);
   if (err) {
     error("everip_init: netevent_init\n");
     return err;

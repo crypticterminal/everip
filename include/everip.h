@@ -240,6 +240,7 @@ enum MAGI_EVENTDRIVER_WATCH {
      MAGI_EVENTDRIVER_WATCH_E2E = 0
    , MAGI_EVENTDRIVER_WATCH_NOISE
    , MAGI_EVENTDRIVER_WATCH_LEDBAT
+   , MAGI_EVENTDRIVER_WATCH_NETEVENT
    , MAGI_EVENTDRIVER_WATCH_MAXIMUM /* must be last! */
 };
 
@@ -922,8 +923,22 @@ const struct sa *net_laddr_af(const struct network *net, int af);
 const char      *net_domain(const struct network *net);
 struct dnsc     *net_dnsc(const struct network *net);
 
+enum NETEVENT_EVENT {
+     NETEVENT_EVENT_INIT = 0
+   , NETEVENT_EVENT_CLOSE = 1
+   , NETEVENT_EVENT_DEV_UP = 2
+   , NETEVENT_EVENT_DEV_DOWN = 3
+};
+
 struct netevent;
-int netevent_init( struct netevent **neteventp );
+struct netevent_event {
+  struct netevent *ne;
+  enum NETEVENT_EVENT type;
+  const char *if_name;
+  unsigned int if_index;
+};
+
+int netevent_init( struct netevent **neteventp, struct magi_eventdriver *ed );
 
 /*
  * User Interface

@@ -26,93 +26,128 @@
 #include <fcntl.h>
 
 struct netevent {
-	int fd;
+  int fd;
+  struct magi_eventdriver *ed;
 };
 
 static void _read_handler(int flags, void *arg)
 {
-	struct netevent *ne = arg;
-	ssize_t n;
-	uint8_t msg[2048];
+  struct netevent_event event;
+  struct netevent *ne = arg;
+  ssize_t n;
+  uint8_t msg[2048];
+  char _ifname[IF_NAMESIZE] = {0};
+  struct rt_msghdr *hdr = NULL;
+  struct if_msghdr *ifm = NULL;
 
-	n = read(ne->fd, msg, 2048);
-	if (n < 0) {
-		goto out;
-	}
+  n = read(ne->fd, msg, 2048);
+  if (n < 0) {
+    goto out;
+  }
 
-	struct rt_msghdr *hdr = (struct rt_msghdr *)(void *)msg;
+  hdr = (struct rt_msghdr *)(void *)msg;
 
-	if (hdr->rtm_type != RTM_IFINFO) {
-		return;
-	}
+  if (hdr->rtm_type != RTM_IFINFO) {
+    return;
+  }
 
-	struct if_msghdr *ifm = (struct if_msghdr *)hdr;
+  ifm = (struct if_msghdr *)hdr;
 
-	char _ifname[IF_NAMESIZE];
-	if_indextoname(ifm->ifm_index, _ifname);
+  if_indextoname(ifm->ifm_index, _ifname);
 
-	info( "IF[%s] has changed %s\n"
-		 , _ifname
-		 , hdr->rtm_flags & RTF_UP ? "UP" : "DOWN");
+  if (ne->ed) {
+    event.ne = ne;
+    event.type = hdr->rtm_flags & RTF_UP ? NETEVENT_EVENT_DEV_UP
+                                         : NETEVENT_EVENT_DEV_DOWN;
+    event.if_name = _ifname;
+    event.if_index = ifm->ifm_index;
+
+    magi_eventdriver_handler_run( ne->ed
+                                , MAGI_EVENTDRIVER_WATCH_NETEVENT
+                                , &event );
+  }
 
  out:
- 	return;
+  return;
 }
 
 static void netevent_destructor(void *data)
 {
-	struct netevent *netevent = data;
-	if (netevent->fd > 0) {
-		fd_close(netevent->fd);
-		(void)close(netevent->fd);
-	}
+  struct netevent *netevent = data;
+  struct netevent_event event;
+
+  if (netevent->ed) {
+    event.ne = netevent;
+    event.type = NETEVENT_EVENT_CLOSE;
+    event.if_name = NULL;
+    event.if_index = 0;
+
+    magi_eventdriver_handler_run( netevent->ed
+                                , MAGI_EVENTDRIVER_WATCH_NETEVENT
+                                , &event );    
+  }
+
+  if (netevent->fd > 0) {
+    fd_close(netevent->fd);
+    (void)close(netevent->fd);
+  }
 }
 
-int netevent_init( struct netevent **neteventp )
+int netevent_init( struct netevent **neteventp, struct magi_eventdriver *ed )
 {
-	int err = 0;
+  int err = 0;
+  struct netevent *netevent;
+  struct netevent_event event;
 
-	struct netevent *netevent;
+  if (!neteventp)
+    return EINVAL;
 
-	if (!neteventp)
-		return EINVAL;
+  netevent = mem_zalloc(sizeof(*netevent), netevent_destructor);
+  if (!netevent) {
+      netevent = mem_deref(netevent);
+    return ENOMEM;
+  }
 
-	netevent = mem_zalloc(sizeof(*netevent), netevent_destructor);
-	if (!netevent) {
-	    netevent = mem_deref(netevent);
-		return ENOMEM;
-	}
+  netevent->fd = socket(PF_ROUTE, SOCK_RAW, AF_UNSPEC);
+  if (netevent->fd < 0) {
+      netevent = mem_deref(netevent);
+      return EINVAL;
+  }
 
-    netevent->fd = socket(PF_ROUTE, SOCK_RAW, AF_UNSPEC);
-    if (netevent->fd < 0) {
-        netevent = mem_deref(netevent);
-        return EINVAL;
-    }
+  net_sockopt_blocking_set(netevent->fd, false);
 
-	net_sockopt_blocking_set(netevent->fd, false);
+  err = fcntl(netevent->fd, F_SETFD, FD_CLOEXEC);
+  if (err) {
+    goto err;
+  }
 
-	err = fcntl(netevent->fd, F_SETFD, FD_CLOEXEC);
-	if (err) {
-		goto err;
-	}
+  err = fd_listen( netevent->fd
+               , FD_READ
+               , _read_handler
+               , netevent);
+  if (err) {
+    goto err;
+  }
 
-    /*re_printf("Initialized netevent\n");*/
+  netevent->ed = ed;
 
-    /* setup event handler */
-	err = fd_listen( netevent->fd
-		           , FD_READ
-		           , _read_handler
-		           , netevent);
-	if (err) {
-        goto err;
-	}
+  if (ed) {
+    event.ne = netevent;
+    event.type = NETEVENT_EVENT_INIT;
+    event.if_name = NULL;
+    event.if_index = 0;
 
-    *neteventp = netevent;
+    magi_eventdriver_handler_run( ed
+                                , MAGI_EVENTDRIVER_WATCH_NETEVENT
+                                , &event );
 
-    return err;
+  }
 
 err:
-	netevent = mem_deref(netevent);
-	return err;
-
+  if (err) {
+    netevent = mem_deref(netevent);
+  } else {
+    *neteventp = netevent;
+  }
+  return err;
 }
