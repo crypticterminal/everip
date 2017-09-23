@@ -43,6 +43,7 @@ SRCS	+= ritsuko/bencode.c
 SRCS	+= ritsuko/bencode_dec.c
 SRCS	+= ritsuko/bencode_dec_od.c
 
+
 ifeq ($(OS),darwin)
 SRCS	+= ritsuko/net_darwin.c
 endif
@@ -52,6 +53,9 @@ endif
 ifeq ($(OS),linux)
 SRCS	+= ritsuko/net_linux.c
 endif
+
+SRCS	+= ritsuko/netevents.c
+
 
 #tree of life
 SRCS	+= treeoflife/atfield.c

@@ -928,17 +928,26 @@ enum NETEVENT_EVENT {
    , NETEVENT_EVENT_CLOSE = 1
    , NETEVENT_EVENT_DEV_UP = 2
    , NETEVENT_EVENT_DEV_DOWN = 3
+   , NETEVENT_EVENT_ADDR_NEW = 4
+   , NETEVENT_EVENT_ADDR_DEL = 5
 };
 
-struct netevent;
+struct netevents;
+struct netevents_runner;
+
 struct netevent_event {
-  struct netevent *ne;
+  struct netevents *ne;
   enum NETEVENT_EVENT type;
   const char *if_name;
   unsigned int if_index;
+
+  struct sa sa;
+  struct sa gw;
+  struct sa nmask;
 };
 
-int netevent_init( struct netevent **neteventp, struct magi_eventdriver *ed );
+int netevents_alloc( struct netevents **neteventsp, struct magi_eventdriver *ed );
+int netevents_runner_alloc( struct netevents_runner **nerp, struct mqueue *mq );
 
 /*
  * User Interface

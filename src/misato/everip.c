@@ -42,7 +42,7 @@ static struct everip {
   /* terminal dogma */
   struct tunif *tunif;
 
-  struct netevent *netevent;
+  struct netevents *netevents;
 
   struct atfield *atfield;
 
@@ -352,6 +352,17 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
            , event->if_name
            , event->type == NETEVENT_EVENT_DEV_UP ? "UP" : "DOWN");
          break;
+      case NETEVENT_EVENT_ADDR_NEW:
+      case NETEVENT_EVENT_ADDR_DEL:
+        info( "[NETEVENT] IF [%u(%s)] ADDR %s %j/%j->%j\n"
+           , event->if_index
+           , event->if_name
+           , event->type == NETEVENT_EVENT_ADDR_NEW ? "NEW" : "DEL"
+           , &event->sa
+           , &event->nmask
+           , &event->gw
+           );
+         break;
     }
 
   }
@@ -473,9 +484,9 @@ int everip_init( const uint8_t skey[NOISE_SECRET_KEY_LEN]
     return err;
   }
 
-  err = netevent_init( &everip.netevent, everip.eventdriver);
+  err = netevents_alloc( &everip.netevents, everip.eventdriver);
   if (err) {
-    error("everip_init: netevent_init\n");
+    error("everip_init: netevents_alloc\n");
     return err;
   }
 
@@ -583,7 +594,7 @@ void everip_close(void)
   everip.magi_melchior = mem_deref(everip.magi_melchior);
   everip.magi = mem_deref( everip.magi );
 
-  everip.netevent = mem_deref(everip.netevent);
+  everip.netevents = mem_deref(everip.netevents);
 
   /* reverse from init */
   everip.tunif = mem_deref(everip.tunif);

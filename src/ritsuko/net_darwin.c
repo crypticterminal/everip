@@ -18,136 +18,143 @@
 #include <re.h>
 #include <everip.h>
 
-#include <sys/uio.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <net/if.h>
-#include <net/route.h>
-#include <fcntl.h>
+#include <pthread.h>
 
-struct netevent {
-  int fd;
-  struct magi_eventdriver *ed;
+#include <SystemConfiguration/SystemConfiguration.h>
+
+struct netevents_runner {
+  bool run;
+  struct mqueue *mq;
+  pthread_t thread;
+  CFRunLoopRef cfrl_ref;
 };
 
-static void _read_handler(int flags, void *arg)
+static void netevents_runner_thread_cb(SCDynamicStoreRef store, CFArrayRef changedKeys, void *arg)
 {
-  struct netevent_event event;
-  struct netevent *ne = arg;
-  ssize_t n;
-  uint8_t msg[2048];
-  char _ifname[IF_NAMESIZE] = {0};
-  struct rt_msghdr *hdr = NULL;
-  struct if_msghdr *ifm = NULL;
+  struct netevents_runner *ner = arg;
+  error("NETWORK HAS CHANGED!!!\n");
+}
 
-  n = read(ne->fd, msg, 2048);
-  if (n < 0) {
+static void *netevents_runner_thread(void *arg)
+{
+  struct netevents_runner *ner = arg;
+  
+  /* here we go jumping into the weird world of apple */
+  SCDynamicStoreRef sc_ref = NULL;
+  CFRunLoopSourceRef run_ref = NULL;
+  CFMutableArrayRef keys = NULL, patterns = NULL;
+  CFStringRef key = NULL;
+
+  SCDynamicStoreContext context = {
+        0 // version
+      , (void *)ner // user data
+      , NULL // retain
+      , NULL // release
+      , NULL // copyDescription
+    };
+
+  ner->cfrl_ref = CFRunLoopGetCurrent();
+
+  sc_ref = SCDynamicStoreCreate(kCFAllocatorDefault, CFSTR("network.ever"), &netevents_runner_thread_cb, &context);
+  if (sc_ref == NULL) {
+    error("netevents_runner: could not create dynamic store;\n");
     goto out;
   }
 
-  hdr = (struct rt_msghdr *)(void *)msg;
+  keys = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
+  patterns = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
 
-  if (hdr->rtm_type != RTM_IFINFO) {
-    return;
+  key = SCDynamicStoreKeyCreateNetworkGlobalEntity(kCFAllocatorDefault, kSCDynamicStoreDomainState, kSCEntNetIPv4);
+  CFArrayAppendValue(keys, key);
+  CFRelease(key);
+
+  key = SCDynamicStoreKeyCreateNetworkGlobalEntity(kCFAllocatorDefault, kSCDynamicStoreDomainState, kSCEntNetIPv6);
+  CFArrayAppendValue(keys, key);
+  CFRelease(key);
+
+  key = SCDynamicStoreKeyCreateNetworkInterfaceEntity(kCFAllocatorDefault, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4);
+  CFArrayAppendValue(patterns, key);
+  CFRelease(key);
+
+  key = SCDynamicStoreKeyCreateNetworkInterfaceEntity(kCFAllocatorDefault, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv6);
+  CFArrayAppendValue(patterns, key);
+  CFRelease(key);
+
+  key = SCDynamicStoreKeyCreateNetworkGlobalEntity(kCFAllocatorDefault, kSCDynamicStoreDomainState, kSCEntNetDNS);
+  CFArrayAppendValue(keys, key);
+  CFRelease(key);
+
+  if(!SCDynamicStoreSetNotificationKeys(sc_ref, (CFArrayRef)keys, (CFArrayRef)patterns)) {
+    error("netevents_runner: could not create dynamic store notification keys;\n");
+    goto out;
   }
 
-  ifm = (struct if_msghdr *)hdr;
-
-  if_indextoname(ifm->ifm_index, _ifname);
-
-  if (ne->ed) {
-    event.ne = ne;
-    event.type = hdr->rtm_flags & RTF_UP ? NETEVENT_EVENT_DEV_UP
-                                         : NETEVENT_EVENT_DEV_DOWN;
-    event.if_name = _ifname;
-    event.if_index = ifm->ifm_index;
-
-    magi_eventdriver_handler_run( ne->ed
-                                , MAGI_EVENTDRIVER_WATCH_NETEVENT
-                                , &event );
+  run_ref = SCDynamicStoreCreateRunLoopSource(NULL, sc_ref, 0);
+  if(run_ref == NULL) {
+    error("netevents_runner: could not create dynamic runloop source;\n");
+    goto out;
   }
 
- out:
-  return;
+  CFRunLoopAddSource(ner->cfrl_ref, run_ref, kCFRunLoopDefaultMode);
+
+  while (ner->run) {
+    CFRunLoopRun();
+  }
+
+  CFRunLoopRemoveSource(ner->cfrl_ref, run_ref, kCFRunLoopDefaultMode);
+
+out:
+  CFRelease(run_ref);
+  CFRelease(keys);
+  CFRelease(patterns);
+  return NULL;
 }
 
-static void netevent_destructor(void *data)
+static void netevents_runner_destructor(void *data)
 {
-  struct netevent *netevent = data;
-  struct netevent_event event;
+  struct netevents_runner *ner = data;
 
-  if (netevent->ed) {
-    event.ne = netevent;
-    event.type = NETEVENT_EVENT_CLOSE;
-    event.if_name = NULL;
-    event.if_index = 0;
-
-    magi_eventdriver_handler_run( netevent->ed
-                                , MAGI_EVENTDRIVER_WATCH_NETEVENT
-                                , &event );    
+  if (ner->run) {
+    debug("netevents_runner: stopping thread\n");
+    ner->run = false;
+    CFRunLoopStop(ner->cfrl_ref);
+    (void)pthread_join(ner->thread, NULL);
   }
 
-  if (netevent->fd > 0) {
-    fd_close(netevent->fd);
-    (void)close(netevent->fd);
-  }
+  ner->mq = mem_deref( ner->mq );
+
 }
 
-int netevent_init( struct netevent **neteventp, struct magi_eventdriver *ed )
+int netevents_runner_alloc( struct netevents_runner **nerp, struct mqueue *mq )
 {
   int err = 0;
-  struct netevent *netevent;
-  struct netevent_event event;
+  struct netevents_runner *ner;
 
-  if (!neteventp)
+  if (!nerp || !mq)
     return EINVAL;
 
-  netevent = mem_zalloc(sizeof(*netevent), netevent_destructor);
-  if (!netevent) {
-      netevent = mem_deref(netevent);
+  ner = mem_zalloc(sizeof(*ner), netevents_runner_destructor);
+  if (!ner) {
     return ENOMEM;
   }
 
-  netevent->fd = socket(PF_ROUTE, SOCK_RAW, AF_UNSPEC);
-  if (netevent->fd < 0) {
-      netevent = mem_deref(netevent);
-      return EINVAL;
-  }
+  ner->mq = mq;
+  mem_ref( ner->mq );
 
-  net_sockopt_blocking_set(netevent->fd, false);
-
-  err = fcntl(netevent->fd, F_SETFD, FD_CLOEXEC);
+  ner->run = true;
+  err = pthread_create(&ner->thread, NULL, netevents_runner_thread, ner);
   if (err) {
-    goto err;
+    ner->run = false;
+    goto out;
   }
 
-  err = fd_listen( netevent->fd
-               , FD_READ
-               , _read_handler
-               , netevent);
+  error("netevents_runner_alloc\n");
+
+out:
   if (err) {
-    goto err;
-  }
-
-  netevent->ed = ed;
-
-  if (ed) {
-    event.ne = netevent;
-    event.type = NETEVENT_EVENT_INIT;
-    event.if_name = NULL;
-    event.if_index = 0;
-
-    magi_eventdriver_handler_run( ed
-                                , MAGI_EVENTDRIVER_WATCH_NETEVENT
-                                , &event );
-
-  }
-
-err:
-  if (err) {
-    netevent = mem_deref(netevent);
+    ner = mem_deref(ner);
   } else {
-    *neteventp = netevent;
+    *nerp = ner;
   }
   return err;
 }
