@@ -32,7 +32,7 @@ struct netevents_runner {
 static void netevents_runner_thread_cb(SCDynamicStoreRef store, CFArrayRef changedKeys, void *arg)
 {
   struct netevents_runner *ner = arg;
-  error("NETWORK HAS CHANGED!!!\n");
+  mqueue_push(ner->mq, 1, NULL);
 }
 
 static void *netevents_runner_thread(void *arg)

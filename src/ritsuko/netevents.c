@@ -21,15 +21,47 @@
 struct netevents {
   struct magi_eventdriver *ed;
   struct netevents_runner *ner;
-
   struct mqueue *mq;
+
+  struct tmr tmr_update;
 };
 
+
+
+static bool _if_handler( const char *ifname
+                       , const struct sa *sa
+                       , void *arg )
+{
+  struct netevents *ne = arg;
+  error("%s %j\n", ifname, sa);
+  return false;
+}
+
+static void _tmr_update_handler(void *arg)
+{
+  int err = 0;
+  struct netevents *ne = arg;
+
+  error("got network update event\n");
+
+#ifdef HAVE_GETIFADDRS
+    err |= net_getifaddrs(_if_handler, ne);
+#else
+    err |= net_if_list(_if_handler, ne);
+#endif
+}
 
 static void mqueue_handler(int id, void *data, void *arg)
 {
   struct netevents *ne = arg;
   (void)data;
+
+  if (id == 1) {
+    /* we get multiple events when something changes,
+       so wait until last change and then fire.
+     */
+    tmr_start(&ne->tmr_update, 200, _tmr_update_handler, ne);
+  }
 
 }
 
@@ -49,6 +81,9 @@ static void netevents_destructor(void *data)
 
   netevents->ner = mem_deref( netevents->ner );
   netevents->mq = mem_deref( netevents->mq );
+
+  tmr_cancel(&netevents->tmr_update);
+
 }
 
 int netevents_alloc( struct netevents **neteventsp
@@ -66,6 +101,8 @@ int netevents_alloc( struct netevents **neteventsp
   if (!netevents) {
     return ENOMEM;
   }
+
+  tmr_init(&netevents->tmr_update);
 
   err = mqueue_alloc(&netevents->mq, mqueue_handler, netevents);
   if (err)
