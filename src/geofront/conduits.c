@@ -159,7 +159,7 @@ out:
 int conduit_peer_encrypted_send( struct conduit_peer *cp
                                , struct mbuf *mb )
 {
-  if (!cp)
+  if (!cp || !mb)
     return EINVAL;
   return noise_session_send(cp->ns, mb);
 }
