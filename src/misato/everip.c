@@ -350,7 +350,7 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
         info( "[NETEVENT] IF [%s] is %s\n"
            , event->if_name
            , event->type == NETEVENT_EVENT_DEV_UP ? "UP" : "DOWN");
-         break;
+        break;
       case NETEVENT_EVENT_ADDR_NEW:
       case NETEVENT_EVENT_ADDR_DEL:
         info( "[NETEVENT] IF [%s] ADDR %s %j\n"
@@ -358,7 +358,7 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
            , event->type == NETEVENT_EVENT_ADDR_NEW ? "NEW" : "DEL"
            , &event->sa
            );
-         break;
+        break;
     }
 
   }
