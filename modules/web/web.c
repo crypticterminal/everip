@@ -18,9 +18,12 @@
 #include <re.h>
 #include <everip.h>
 
+#define WEBSOCKET_V "v1"
+
 struct this_module;
 
 struct ws_client {
+  struct le le;
   struct dnsc *dnsc;
   struct websock *ws;
   struct http_cli *http;
@@ -28,21 +31,23 @@ struct ws_client {
 
   struct this_module *ctx;
 
-  struct hash *peers;
+  uint64_t last_jiffy;
 
 };
 
 struct wsc_peer {
   struct conduit_peer cp;
   struct le le;
-  struct ws_client *wsc;
+  struct this_module *mod;
   uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
 };
 
 struct this_module {
   struct conduit *conduit;
 
-  struct ws_client *wsc;
+  struct hash *peers;
+
+  struct list ws_clients;
   struct tmr tmr_retry;
 };
 
@@ -75,7 +80,7 @@ static void wsc_peer_destructor(void *data)
 }
 
 static int wsc_peer_alloc( struct wsc_peer **wpp
-                         , struct ws_client *wsc
+                         , struct this_module *mod
                          , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
                          , uint8_t *new_peer
                          )
@@ -83,13 +88,13 @@ static int wsc_peer_alloc( struct wsc_peer **wpp
   int err = 0;
   struct wsc_peer *wp = NULL;
 
-  if (!wsc || !everip_addr)
+  if (!mod || !everip_addr)
     return EINVAL;
 
-  wp = list_ledata(hash_lookup( wsc->peers
-                                   , *(uint32_t *)(void *)everip_addr
-                                   , wsc_peer_hash_h
-                                   , (void *)everip_addr ));
+  wp = list_ledata(hash_lookup( mod->peers
+                              , *(uint32_t *)(void *)everip_addr
+                              , wsc_peer_hash_h
+                              , (void *)everip_addr ));
 
   if (wp) {
     *new_peer = 0;
@@ -103,10 +108,10 @@ static int wsc_peer_alloc( struct wsc_peer **wpp
 
   *new_peer = 1;
 
-  wp->cp.conduit = wsc->ctx->conduit;
-  wp->wsc = wsc;
+  wp->cp.conduit = mod->conduit;
+  wp->mod = mod;
   memcpy(wp->everip_addr, everip_addr, EVERIP_ADDRESS_LENGTH);
-  hash_append(wsc->peers, *(uint32_t *)(void *)everip_addr, &wp->le, wp);
+  hash_append(mod->peers, *(uint32_t *)(void *)everip_addr, &wp->le, wp);
 
   *wpp = wp;
 
@@ -292,7 +297,7 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
       in_pubkey = mbuf_buf(mb);
 
       err_proto = wsc_peer_alloc( &wp
-                                , wsc
+                                , wsc->ctx
                                 , in_everip
                                 , &new_peer
                                 );
@@ -321,7 +326,7 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
       mbuf_advance(mb, 16);
 
       err_proto = wsc_peer_alloc( &wp
-                                , wsc
+                                , wsc->ctx
                                 , in_everip
                                 , &new_peer
                                 );
@@ -338,6 +343,7 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
       goto out;
   }
 
+  wsc->last_jiffy = tmr_jiffies();
 
  out:
   if (mb) {
@@ -353,11 +359,11 @@ static void wsc_handler_close(int err, void *arg)
 {
   struct ws_client *wsc = arg;
 
-  tmr_start( &wsc->ctx->tmr_retry
+/*  tmr_start( &wsc->ctx->tmr_retry
            , WEB_RECONNECT_TIMEOUT_MS
            , module_wsc_tmr_retry_h
            , wsc->ctx
-           );
+           );*/
 
   /* translate error code */
   debug("wsc_handler_close: %m\n", err);
@@ -370,8 +376,7 @@ static void wsc_destructor(void *data)
 {
   struct ws_client *wsc = data;
 
-  hash_flush( wsc->peers );
-  wsc->peers = mem_deref( wsc->peers );
+  list_unlink(&wsc->le);
 
   wsc->wc = mem_deref(wsc->wc);
   websock_shutdown(wsc->ws);
@@ -380,10 +385,11 @@ static void wsc_destructor(void *data)
   wsc->http = mem_deref(wsc->http);
   wsc->dnsc = mem_deref(wsc->dnsc);
 
-  wsc->ctx->wsc = NULL;
 }
 
-static int wsc_alloc(struct ws_client **wscp, struct this_module *mod )
+static int wsc_alloc( struct ws_client **wscp
+                    , struct this_module *mod
+                    , const struct sa *bind )
 {
   int err = 0;
   char uri[256];
@@ -391,8 +397,17 @@ static int wsc_alloc(struct ws_client **wscp, struct this_module *mod )
   struct ws_client *wsc = NULL;
   uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
 
-  if (!wscp || !mod)
+  if (!wscp || !mod || !bind)
     return EINVAL;
+
+  if ( sa_af(bind) != AF_INET
+    || sa_is_linklocal(bind)
+    || sa_is_loopback(bind) ) {
+    /* websocket subsystem currently only supports IPv4 */
+    return EINVAL;
+  }
+
+  error("[WS] attempting connection via %j\n", bind);
 
   wsc = mem_zalloc(sizeof(*wsc), wsc_destructor);
   if (!wsc)
@@ -408,8 +423,6 @@ static int wsc_alloc(struct ws_client **wscp, struct this_module *mod )
     goto out;
   }
 
-  hash_alloc(&wsc->peers, 16);
-
   /* dns */
   err |= sa_set_str(&dns, "8.8.8.8", 53);
   if (err)
@@ -424,6 +437,10 @@ static int wsc_alloc(struct ws_client **wscp, struct this_module *mod )
   if (err)
     goto out;
 
+  err = http_client_bind(wsc->http, bind);
+  if (err)
+    goto out;
+
   /* websocket alloc */
   err = websock_alloc(&wsc->ws, ws_handle_shutdown, wsc);
   if (err)
@@ -432,7 +449,7 @@ static int wsc_alloc(struct ws_client **wscp, struct this_module *mod )
   /* create url that includes our everip address */
   (void)re_snprintf( uri
                    , sizeof(uri)
-                   , "http://160.16.126.97/v1/dock/%w"
+                   , "http://ws." WEBSOCKET_V ".ever.network/" WEBSOCKET_V "/dock/%w"
                    , everip_addr, EVERIP_ADDRESS_LENGTH);
 
   /* websocket connect */
@@ -462,14 +479,18 @@ out:
 static int _conduit_search( const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
                           , void *arg )
 {
+  struct ws_client *wsc = NULL;
   struct this_module *mod = arg;
 
   debug("websocket: _conduit_search;\n");
 
-  if (!mod->wsc)
+  wsc = list_ledata(list_head(&mod->ws_clients));
+  if (!wsc) {
+    /* we don't have a connection to send this to; DROP */
     goto out;
+  }
 
-  wsc_send_search(mod->wsc, everip_addr);
+  wsc_send_search(wsc, everip_addr);
 
 out:
   return 0;
@@ -498,6 +519,7 @@ static int _conduit_sendto_outside( struct conduit_peer *peer
   int err = 0;
   size_t mb_pos = 0;
   struct wsc_peer *wp;
+  struct ws_client *wsc = NULL;
   struct this_module *mod = arg;
 
   /*debug("_conduit_sendto_outside\n");*/
@@ -521,17 +543,25 @@ static int _conduit_sendto_outside( struct conduit_peer *peer
 
   /*error("WEBSOCKET: [%u]%w\n", mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));*/
   
-  websock_send( wp->wsc->wc
+  wsc = list_ledata(list_head(&wp->mod->ws_clients));
+  if (!wsc) {
+    /* we don't have a connection to send this to; DROP */
+    goto out;
+  }
+  
+  websock_send( wsc->wc
               , WEBSOCK_BIN
               , "%b"
               , mbuf_buf(mb), mbuf_get_left(mb)
               );
 
+out:
   return err;
 }
 
 static void module_wsc_tmr_retry_h( void *arg )
 {
+#if 0
   int err = 0;
   struct this_module *mod = arg;
   if (!mod)
@@ -548,12 +578,67 @@ static void module_wsc_tmr_retry_h( void *arg )
              , mod
              );
   }
+#endif
+}
+
+static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
+                               , void *data
+                               , void *arg )
+{
+  int err = 0;
+  struct le *le;
+  struct ws_client *wsc = NULL;
+  struct this_module *mod = arg;
+  struct netevent_event *event = data;
+
+  if (type != MAGI_EVENTDRIVER_WATCH_NETEVENT)
+    goto out;
+
+  if (!sa_isset(&event->sa, SA_ADDR))
+    goto out;
+
+  LIST_FOREACH(&mod->ws_clients, le) {
+    wsc = le->data;
+    if (sa_cmp(&event->sa, http_client_bound(wsc->http), SA_ADDR)) {
+      break;
+    } else {
+      wsc = NULL;
+    }
+  }
+
+  switch(event->type) {
+    case NETEVENT_EVENT_ADDR_NEW:
+      if (wsc) {
+        wsc = mem_deref(wsc);
+      }
+      err = wsc_alloc(&wsc, mod, &event->sa);
+      if (err)
+        goto out;
+      list_append(&mod->ws_clients, &wsc->le, wsc);
+      goto out;
+    case NETEVENT_EVENT_ADDR_DEL:
+      if (wsc) {
+        wsc = mem_deref(wsc);
+      }
+      goto out;
+    default:
+      goto out;
+  }
+
+out:
+  return 0;
 }
 
 static void module_destructor(void *data)
 {
   struct this_module *mod = data;
-  mod->wsc = mem_deref(mod->wsc);
+  /*mod->wsc = mem_deref(mod->wsc);*/
+
+  list_flush( &mod->ws_clients );
+
+  hash_flush( mod->peers );
+  mod->peers = mem_deref( mod->peers );
+
   g_mod->conduit = mem_deref( g_mod->conduit );
   tmr_cancel(&mod->tmr_retry);
 }
@@ -566,10 +651,16 @@ static int module_init(void)
   if (!g_mod)
     return ENOMEM;
 
-  err = wsc_alloc(&g_mod->wsc, g_mod);
-  if (err)
-    goto out;
+  hash_alloc(&g_mod->peers, 16);
 
+  err = magi_eventdriver_handler_register( everip_eventdriver()
+                                         , MAGI_EVENTDRIVER_WATCH_NETEVENT
+                                         , magi_event_watcher_h
+                                         , g_mod );
+  if (err) {
+    error("everip_init: magi_eventdriver_handler_register\n");
+    return err;
+  }
 
   conduits_register( &g_mod->conduit
                    , everip_conduits()
