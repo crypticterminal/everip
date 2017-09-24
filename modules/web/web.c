@@ -658,7 +658,7 @@ static int module_init(void)
                                          , magi_event_watcher_h
                                          , g_mod );
   if (err) {
-    error("everip_init: magi_eventdriver_handler_register\n");
+    error("websocket: magi_eventdriver_handler_register\n");
     return err;
   }
 
