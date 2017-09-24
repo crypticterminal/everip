@@ -347,20 +347,16 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
         break;
       case NETEVENT_EVENT_DEV_UP:
       case NETEVENT_EVENT_DEV_DOWN:
-        info( "[NETEVENT] IF [%u(%s)] is %s\n"
-           , event->if_index
+        info( "[NETEVENT] IF [%s] is %s\n"
            , event->if_name
            , event->type == NETEVENT_EVENT_DEV_UP ? "UP" : "DOWN");
          break;
       case NETEVENT_EVENT_ADDR_NEW:
       case NETEVENT_EVENT_ADDR_DEL:
-        info( "[NETEVENT] IF [%u(%s)] ADDR %s %j/%j->%j\n"
-           , event->if_index
+        info( "[NETEVENT] IF [%s] ADDR %s %j\n"
            , event->if_name
            , event->type == NETEVENT_EVENT_ADDR_NEW ? "NEW" : "DEL"
            , &event->sa
-           , &event->nmask
-           , &event->gw
            );
          break;
     }

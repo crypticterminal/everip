@@ -73,6 +73,7 @@ static bool _if_handler( const char *ifname
 {
   struct netevents *ne = arg;
   struct interfaces_needle need;
+  struct netevent_event event;
 
   struct _interface *_iface = NULL;
 
@@ -87,7 +88,7 @@ static bool _if_handler( const char *ifname
                   , &need );
 
   if (!need.exists_if || !need.exists_sa) {
-    error("adding%s: %s %j\n", !need.exists_if ? " FOR FIRST" : "", ifname, sa);
+    /*error("adding%s: %s %j\n", !need.exists_if ? " FOR FIRST" : "", ifname, sa);*/
     if (!need.exists_if) {
       /* set marker to see if we still have interface later */
       _iface = mem_zalloc(sizeof(*_iface), _interface_destructor);
@@ -97,6 +98,16 @@ static bool _if_handler( const char *ifname
       _iface->touch_if = true;
       _iface->touch_sa = true;
       list_append(&ne->interfaces, &_iface->le, _iface);
+
+      memset(&event, 0, sizeof(event));
+
+      event.ne = ne;
+      event.type = NETEVENT_EVENT_DEV_UP;
+      event.if_name = ifname;
+
+      magi_eventdriver_handler_run( ne->ed
+                                  , MAGI_EVENTDRIVER_WATCH_NETEVENT
+                                  , &event );
     }
 
     _iface = mem_zalloc(sizeof(*_iface), _interface_destructor);
@@ -108,6 +119,16 @@ static bool _if_handler( const char *ifname
     list_append(&ne->interfaces, &_iface->le, _iface);
 
     /* notify under layers here */
+    memset(&event, 0, sizeof(event));
+
+    event.ne = ne;
+    event.type = NETEVENT_EVENT_ADDR_NEW;
+    event.if_name = ifname;
+    sa_cpy(&event.sa, sa);
+
+    magi_eventdriver_handler_run( ne->ed
+                                , MAGI_EVENTDRIVER_WATCH_NETEVENT
+                                , &event );
   }
   /*error("%s %j\n", ifname, sa);*/
   return false;
@@ -117,17 +138,37 @@ static bool interfaces_sweep_apply_h(struct le *le, void *arg)
 {
   struct _interface *iface = le->data;
   struct netevents *ne = arg;
+  struct netevent_event event;
+
+  memset(&event, 0, sizeof(event));
 
   if (iface->ifmarker) {
     if (!iface->touch_if) {
       /* interface no longer exists */
-      error("interface [%s] no longer exists!\n", iface->ifname);
+
+      event.ne = ne;
+      event.type = NETEVENT_EVENT_DEV_DOWN;
+      event.if_name = iface->ifname;
+
+      magi_eventdriver_handler_run( ne->ed
+                                  , MAGI_EVENTDRIVER_WATCH_NETEVENT
+                                  , &event );
+
+      /*error("interface [%s] no longer exists!\n", iface->ifname);*/
       iface = mem_deref( iface );
       goto out;
     }
   } else if (!iface->touch_sa) {
     /* address no longer exists */
-    error("address %s:%j no longer exists!\n", iface->ifname, &iface->sa);
+    event.ne = ne;
+    event.type = NETEVENT_EVENT_ADDR_DEL;
+    event.if_name = iface->ifname;
+    sa_cpy(&event.sa, &iface->sa);
+
+    magi_eventdriver_handler_run( ne->ed
+                                , MAGI_EVENTDRIVER_WATCH_NETEVENT
+                                , &event );
+    /*error("address %s:%j no longer exists!\n", iface->ifname, &iface->sa);*/
     iface = mem_deref( iface );
     goto out;
   } 
@@ -145,7 +186,7 @@ static void _tmr_update_handler(void *arg)
   int err = 0;
   struct netevents *ne = arg;
 
-  error("got network update event\n");
+  /*error("got network update event\n");*/
 
 #ifdef HAVE_GETIFADDRS
   err |= net_getifaddrs(_if_handler, ne);
@@ -182,6 +223,7 @@ static void netevents_destructor(void *data)
   struct netevent_event event;
 
   if (netevents->ed) {
+    memset(&event, 0, sizeof(event));
     event.ne = netevents;
     event.type = NETEVENT_EVENT_CLOSE;
 
@@ -228,8 +270,16 @@ int netevents_alloc( struct netevents **neteventsp
   if (err)
     goto out;
 
+  netevents->ed = ed;
 
-  error("netevents_alloc\n");
+  memset(&event, 0, sizeof(event));
+
+  event.ne = netevents;
+  event.type = NETEVENT_EVENT_INIT;
+
+  magi_eventdriver_handler_run( netevents->ed
+                              , MAGI_EVENTDRIVER_WATCH_NETEVENT
+                              , &event );
 
 out:
   if (err) {

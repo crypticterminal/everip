@@ -939,11 +939,7 @@ struct netevent_event {
   struct netevents *ne;
   enum NETEVENT_EVENT type;
   const char *if_name;
-  unsigned int if_index;
-
   struct sa sa;
-  struct sa gw;
-  struct sa nmask;
 };
 
 int netevents_alloc( struct netevents **neteventsp, struct magi_eventdriver *ed );
