@@ -33,6 +33,7 @@ struct _interface {
   struct sa sa;
   bool touch_if;
   bool touch_sa;
+  bool ifmarker;
 };
 
 struct interfaces_needle {
@@ -61,7 +62,6 @@ static bool interfaces_needle_apply_h(struct le *le, void *arg)
       && sa_cmp(&iface->sa, need->sa, SA_ADDR)) {
       need->exists_sa = true;
       iface->touch_sa = true;
-      return true;
     }
   }
   return false;
@@ -88,6 +88,16 @@ static bool _if_handler( const char *ifname
 
   if (!need.exists_if || !need.exists_sa) {
     error("adding%s: %s %j\n", !need.exists_if ? " FOR FIRST" : "", ifname, sa);
+    if (!need.exists_if) {
+      /* set marker to see if we still have interface later */
+      _iface = mem_zalloc(sizeof(*_iface), _interface_destructor);
+      str_dup(&_iface->ifname, ifname);
+      _iface->ifmarker = true;
+      /* set touch to true because we reset on the sweep */
+      _iface->touch_if = true;
+      _iface->touch_sa = true;
+      list_append(&ne->interfaces, &_iface->le, _iface);
+    }
 
     _iface = mem_zalloc(sizeof(*_iface), _interface_destructor);
     str_dup(&_iface->ifname, ifname);
@@ -108,14 +118,16 @@ static bool interfaces_sweep_apply_h(struct le *le, void *arg)
   struct _interface *iface = le->data;
   struct netevents *ne = arg;
 
-  if (!iface->touch_if) {
-    /* interface no longer exists */
-    error("interface [%s] no longer exists!\n", iface->ifname);
-    iface = mem_deref( iface );
-    goto out;
+  if (iface->ifmarker) {
+    if (!iface->touch_if) {
+      /* interface no longer exists */
+      error("interface [%s] no longer exists!\n", iface->ifname);
+      iface = mem_deref( iface );
+      goto out;
+    }
   } else if (!iface->touch_sa) {
     /* address no longer exists */
-    error("address no longer exists!\n");
+    error("address %s:%j no longer exists!\n", iface->ifname, &iface->sa);
     iface = mem_deref( iface );
     goto out;
   } 
