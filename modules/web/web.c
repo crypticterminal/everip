@@ -44,10 +44,6 @@
 #include <re.h>
 #include <everip.h>
 
-#define WEBSOCKET_V "v1"
-
-#define WEBSOCKET_MAINTAIN_TMR_MS 1000
-
 struct this_module;
 
 struct ws_client {
@@ -60,6 +56,10 @@ struct ws_client {
   struct this_module *ctx;
 
   uint64_t last_jiffy;
+
+  struct tmr tmr_kick;
+
+  char uri[256];
 
 };
 
@@ -76,18 +76,42 @@ struct this_module {
   struct hash *peers;
 
   struct list ws_clients;
-  struct tmr tmr_retry;
-
   struct tmr tmr_maintain;
 };
 
 static struct this_module *g_mod = NULL;
 
+#define WEBSOCKET_V "v1"
 #define WEB_RECONNECT_TIMEOUT_MS 4000
+#define WEBSOCKET_MAINTAIN_TMR_MS 1000
 
 static const char g_useragent[] = "ConnectFree(R) EVER/IP(R) v" EVERIP_VERSION;
 
 static void module_wsc_tmr_retry_h( void *arg );
+static int wsc_alloc( struct ws_client **wscp
+                    , struct this_module *mod
+                    , const struct sa *bind
+                    , uint64_t ms_to_activation );
+
+/* -- debug stuff -- */
+
+static bool _wsc_debug(struct le *le, void *arg)
+{
+  struct re_printf *pf = arg;
+  struct ws_client *wsc = le->data;
+  re_hprintf(pf, "→ %J [%u]\n", http_client_bound(wsc->http), wsc->last_jiffy);
+  return false;
+}
+
+static int _conduit_debug(struct re_printf *pf, void *arg)
+{
+  int err = 0;
+  struct this_module *mod = arg;
+
+  list_apply(&mod->ws_clients, true, _wsc_debug, pf);
+
+  return err;
+}
 
 /* ---- wsc peer layer ----- */
 
@@ -388,17 +412,39 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
 static void wsc_handler_close(int err, void *arg)
 {
   struct ws_client *wsc = arg;
-
-/*  tmr_start( &wsc->ctx->tmr_retry
-           , WEB_RECONNECT_TIMEOUT_MS
-           , module_wsc_tmr_retry_h
-           , wsc->ctx
-           );*/
+  struct ws_client *wsc_new = NULL;
 
   /* translate error code */
-  debug("wsc_handler_close: %m\n", err);
+  error("wsc_handler_close: %m\n", err);
 
-  /*wsc->ctx->wsc = mem_deref(wsc);*/
+  /* if this fails, we really don't have much in the way of recourse */
+  (void)wsc_alloc(&wsc_new
+                 , wsc->ctx
+                 , http_client_bound(wsc->http)
+                 , WEB_RECONNECT_TIMEOUT_MS );
+  list_append(&wsc->ctx->ws_clients, &wsc_new->le, wsc_new);
+
+  wsc = mem_deref(wsc);
+
+}
+
+static void module_wsc_tmr_kick_h( void *arg )
+{
+  int err = 0;
+  struct ws_client *wsc = arg;
+
+  /* websocket connect */
+  err = websock_connect( &wsc->wc, wsc->ws
+                       , wsc->http, wsc->uri, 0
+                       , &wsc_handler_estab
+                       , &wsc_handler_recv
+                       , &wsc_handler_close, wsc
+                       , "User-Agent: %s (%s/%s)\r\n"
+                       , g_useragent, sys_os_get(), sys_arch_get()
+                       );
+  if (err) {
+    wsc = mem_deref(wsc);
+  }
 
 }
 
@@ -415,14 +461,16 @@ static void wsc_destructor(void *data)
   wsc->http = mem_deref(wsc->http);
   wsc->dnsc = mem_deref(wsc->dnsc);
 
+  tmr_cancel(&wsc->tmr_kick);
+
 }
 
 static int wsc_alloc( struct ws_client **wscp
                     , struct this_module *mod
-                    , const struct sa *bind )
+                    , const struct sa *bind
+                    , uint64_t ms_to_activation )
 {
   int err = 0;
-  char uri[256];
   struct sa dns;
   struct ws_client *wsc = NULL;
   uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
@@ -477,22 +525,19 @@ static int wsc_alloc( struct ws_client **wscp
     goto out;
 
   /* create url that includes our everip address */
-  (void)re_snprintf( uri
-                   , sizeof(uri)
+  (void)re_snprintf( wsc->uri
+                   , sizeof(wsc->uri)
                    , "http://ws." WEBSOCKET_V ".ever.network/" WEBSOCKET_V "/dock/%w"
                    , everip_addr, EVERIP_ADDRESS_LENGTH);
 
-  /* websocket connect */
-  err = websock_connect( &wsc->wc, wsc->ws
-                        , wsc->http, uri, 0
-                        , wsc_handler_estab
-                        , wsc_handler_recv
-                        , wsc_handler_close, wsc
-                        , "User-Agent: %s (%s/%s)\r\n"
-                        , g_useragent, sys_os_get(), sys_arch_get()
-                        );
-  if (err)
-    goto out;
+
+  tmr_init(&wsc->tmr_kick);
+
+  tmr_start( &wsc->tmr_kick
+           , ms_to_activation ? ms_to_activation : 1
+           , &module_wsc_tmr_kick_h
+           , wsc
+           );
 
 out:
   if (err) {
@@ -589,28 +634,6 @@ out:
   return err;
 }
 
-static void module_wsc_tmr_retry_h( void *arg )
-{
-#if 0
-  int err = 0;
-  struct this_module *mod = arg;
-  if (!mod)
-    return;
-
-  mod->wsc = mem_deref(mod->wsc);
-
-  err = wsc_alloc(&mod->wsc, mod);
-
-  if (err) {
-    tmr_start( &mod->tmr_retry
-             , WEB_RECONNECT_TIMEOUT_MS
-             , module_wsc_tmr_retry_h
-             , mod
-             );
-  }
-#endif
-}
-
 static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
                                , void *data
                                , void *arg )
@@ -641,7 +664,7 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
       if (wsc) {
         wsc = mem_deref(wsc);
       }
-      err = wsc_alloc(&wsc, mod, &event->sa);
+      err = wsc_alloc(&wsc, mod, &event->sa, 0);
       if (err)
         goto out;
       list_append(&mod->ws_clients, &wsc->le, wsc);
@@ -694,7 +717,6 @@ static void module_destructor(void *data)
   mod->peers = mem_deref( mod->peers );
 
   g_mod->conduit = mem_deref( g_mod->conduit );
-  tmr_cancel(&mod->tmr_retry);
   tmr_cancel(&mod->tmr_maintain);
 }
 
@@ -742,6 +764,10 @@ static int module_init(void)
   conduit_register_send_handler( g_mod->conduit
                                , _conduit_sendto_outside
                                , g_mod);
+
+  conduit_register_debug_handler( g_mod->conduit
+                                , _conduit_debug
+                                , g_mod );
 
   tmr_init(&g_mod->tmr_maintain);
 
