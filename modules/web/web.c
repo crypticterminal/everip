@@ -20,6 +20,8 @@
 
 #define WEBSOCKET_V "v1"
 
+#define WEBSOCKET_MAINTAIN_TMR_MS 1000
+
 struct this_module;
 
 struct ws_client {
@@ -49,6 +51,8 @@ struct this_module {
 
   struct list ws_clients;
   struct tmr tmr_retry;
+
+  struct tmr tmr_maintain;
 };
 
 static struct this_module *g_mod = NULL;
@@ -629,6 +633,30 @@ out:
   return 0;
 }
 
+static bool module_maintain_wsc_sort_h(struct le *le1, struct le *le2, void *arg)
+{
+  struct ws_client *wsc_1 = le1->data;
+  struct ws_client *wsc_2 = le2->data;
+
+  (void)arg;
+
+  return wsc_1->last_jiffy >= wsc_2->last_jiffy;
+}
+
+static void module_maintain_tmr_h( void *arg )
+{
+  struct this_module *mod = arg;
+
+  list_sort(&mod->ws_clients, &module_maintain_wsc_sort_h, mod);
+
+  /* rebind */
+  tmr_start( &mod->tmr_maintain
+           , WEBSOCKET_MAINTAIN_TMR_MS
+           , &module_maintain_tmr_h
+           , mod
+           );
+}
+
 static void module_destructor(void *data)
 {
   struct this_module *mod = data;
@@ -641,6 +669,7 @@ static void module_destructor(void *data)
 
   g_mod->conduit = mem_deref( g_mod->conduit );
   tmr_cancel(&mod->tmr_retry);
+  tmr_cancel(&mod->tmr_maintain);
 }
 
 static int module_init(void)
@@ -687,6 +716,15 @@ static int module_init(void)
   conduit_register_send_handler( g_mod->conduit
                                , _conduit_sendto_outside
                                , g_mod);
+
+  tmr_init(&g_mod->tmr_maintain);
+
+  /* kickoff timer */
+  tmr_start( &g_mod->tmr_maintain
+           , WEBSOCKET_MAINTAIN_TMR_MS
+           , &module_maintain_tmr_h
+           , g_mod
+           );
 
 out:
   if (err) {
