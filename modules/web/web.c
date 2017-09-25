@@ -15,6 +15,32 @@
  *
  */
 
+/**
+ * 
+ * CONDUIT/WEBSOCKET
+ * 
+ * [説明]
+ * A conduit for Websocket based connectivity.
+ * 
+ * [役割]
+ * The Websocket conduit provides layer-3 connectivity for EVER/IP packets
+ * over TCP/IP on HTTP port 80. Websocket does not support local node discovery
+ * because it is meant to connect nodes together over the global internet
+ * specifically. Websocket supports virtual node discovery, which means that if
+ * another node is connected to the websocket network, the two nodes should be
+ * able to search and find each other.
+ * 
+ * [特徴]
+ * Websocket can be useful because it is based on TCP/IP and HTTP, which is
+ * predominately the most unfiltered combination in the world. This means that
+ * nodes have a higher chance of seeing one another and becoming connected.
+ * 
+ * [Input/Output]
+ * The Websocket conduit sends and receives Noise-Encrypted packets
+ * between the OS/network and the Noise module over TCP/IP and the HTTP port 80.
+ * 
+**/
+
 #include <re.h>
 #include <everip.h>
 
