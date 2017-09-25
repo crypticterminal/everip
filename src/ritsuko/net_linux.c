@@ -44,7 +44,7 @@ static void _read_handler(int flags, void *arg)
     goto out;
   }
 
-  nlh = (struct nlmsghdr *)buf;
+  nlh = (struct nlmsghdr *)(void *)buf;
 
   for ( ; NLMSG_OK(nlh, n); nlh = NLMSG_NEXT(nlh, n) ) {
 
@@ -88,6 +88,11 @@ out:
 static void netevents_runner_destructor(void *data)
 {
   struct netevents_runner *ner = data;
+
+  if (ner->fd > 0) {
+    fd_close(ner->fd);
+    (void)close(ner->fd);
+  }
 
   ner->mq = mem_deref( ner->mq );
 
