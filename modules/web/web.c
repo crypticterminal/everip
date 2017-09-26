@@ -454,12 +454,12 @@ static void wsc_destructor(void *data)
 
   list_unlink(&wsc->le);
 
+  wsc->http = mem_deref(wsc->http);
+  wsc->dnsc = mem_deref(wsc->dnsc);
+
   wsc->wc = mem_deref(wsc->wc);
   websock_shutdown(wsc->ws);
   mem_deref(wsc->ws);
-
-  wsc->http = mem_deref(wsc->http);
-  wsc->dnsc = mem_deref(wsc->dnsc);
 
   tmr_cancel(&wsc->tmr_kick);
 
