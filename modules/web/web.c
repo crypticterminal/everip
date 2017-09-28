@@ -55,11 +55,14 @@ struct ws_client {
 
   struct this_module *ctx;
 
+  uint64_t start_jiffy;
   uint64_t last_jiffy;
 
   struct tmr tmr_kick;
 
   char uri[256];
+
+  bool inside_deref;
 
 };
 
@@ -76,6 +79,7 @@ struct this_module {
   struct hash *peers;
 
   struct list ws_clients;
+  struct list ws_clients_flush;
   struct tmr tmr_maintain;
 };
 
@@ -83,7 +87,8 @@ static struct this_module *g_mod = NULL;
 
 #define WEBSOCKET_V "v1"
 #define WEB_RECONNECT_TIMEOUT_MS 4000
-#define WEBSOCKET_MAINTAIN_TMR_MS 1000
+#define WEBSOCKET_MAINTAIN_TMR_MS 2000
+#define WEBSOCKET_CONNECTION_LAGOUT_MS 10000
 
 static const char g_useragent[] = "ConnectFree(R) EVER/IP(R) v" EVERIP_VERSION;
 
@@ -93,13 +98,19 @@ static int wsc_alloc( struct ws_client **wscp
                     , const struct sa *bind
                     , uint64_t ms_to_activation );
 
+static bool module_maintain_wsc_sort_h(struct le *le1, struct le *le2, void *arg);
+
 /* -- debug stuff -- */
 
 static bool _wsc_debug(struct le *le, void *arg)
 {
   struct re_printf *pf = arg;
   struct ws_client *wsc = le->data;
-  re_hprintf(pf, "→ %J [%u]\n", http_client_bound(wsc->http), wsc->last_jiffy);
+  re_hprintf( pf, "→ %J [%u][wsr:%u]\n"
+            , http_client_bound(wsc->http)
+            , wsc->last_jiffy
+            , mem_nrefs(wsc->wc)
+            );
   return false;
 }
 
@@ -285,6 +296,7 @@ out:
 static void ws_handle_shutdown(void *arg)
 {
   (void)arg;
+  error("ws_handle_shutdown\n");
 }
 
 static void wsc_handler_estab(void *arg)
@@ -313,8 +325,9 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
   uint8_t *in_everip = NULL;
   uint8_t *in_pubkey = NULL;
 
-  (void)wsc;
+  bool do_sort = false;
 
+  (void)wsc;
 
   if (mbuf_get_left(mb) > 1500)
     goto out;
@@ -393,11 +406,19 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
 
       break;
     }
+    case 768: /* server chosen path */
+    {
+      do_sort = true;
+      break;
+    }
     default:
       goto out;
   }
 
   wsc->last_jiffy = tmr_jiffies();
+
+  if (do_sort)
+    list_sort(&wsc->ctx->ws_clients, &module_maintain_wsc_sort_h, wsc->ctx);
 
  out:
   if (mb) {
@@ -408,24 +429,34 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
   }
 }
 
-
-static void wsc_handler_close(int err, void *arg)
+static void wsc_realloc_from_wsc(struct ws_client *wsc)
 {
-  struct ws_client *wsc = arg;
   struct ws_client *wsc_new = NULL;
 
-  /* translate error code */
-  error("wsc_handler_close: %m\n", err);
+  if (!wsc)
+    return;
 
-  /* if this fails, we really don't have much in the way of recourse */
   (void)wsc_alloc(&wsc_new
                  , wsc->ctx
                  , http_client_bound(wsc->http)
                  , WEB_RECONNECT_TIMEOUT_MS );
+
   list_append(&wsc->ctx->ws_clients, &wsc_new->le, wsc_new);
+}
 
-  wsc = mem_deref(wsc);
+static void wsc_handler_close(int err, void *arg)
+{
+  struct ws_client *wsc = arg;
 
+  /* translate error code */
+  error("wsc_handler_close: %p, %m\n", wsc, err);
+
+  /* only add to flush if we are already not in the death throws */
+  if (!wsc->inside_deref) {
+    wsc_realloc_from_wsc(wsc);
+    list_unlink(&wsc->le);
+    list_append(&wsc->ctx->ws_clients_flush, &wsc->le, wsc);
+  }
 }
 
 static void module_wsc_tmr_kick_h( void *arg )
@@ -434,6 +465,7 @@ static void module_wsc_tmr_kick_h( void *arg )
   struct ws_client *wsc = arg;
 
   /* websocket connect */
+  error("[module_wsc_tmr_kick_h] FOR %j -> %s\n", http_client_bound(wsc->http), wsc->uri);
   err = websock_connect( &wsc->wc, wsc->ws
                        , wsc->http, wsc->uri, 0
                        , &wsc_handler_estab
@@ -443,6 +475,8 @@ static void module_wsc_tmr_kick_h( void *arg )
                        , g_useragent, sys_os_get(), sys_arch_get()
                        );
   if (err) {
+    error("ERR [module_wsc_tmr_kick_h] FOR %j %m\n", http_client_bound(wsc->http), err);
+    wsc_realloc_from_wsc(wsc);
     wsc = mem_deref(wsc);
   }
 
@@ -452,16 +486,17 @@ static void wsc_destructor(void *data)
 {
   struct ws_client *wsc = data;
 
-  list_unlink(&wsc->le);
+  wsc->inside_deref = true;
 
-  wsc->http = mem_deref(wsc->http);
+  list_unlink(&wsc->le);
+  tmr_cancel(&wsc->tmr_kick);
+
   wsc->dnsc = mem_deref(wsc->dnsc);
+  wsc->http = mem_deref(wsc->http);
 
   wsc->wc = mem_deref(wsc->wc);
-  websock_shutdown(wsc->ws);
-  mem_deref(wsc->ws);
-
-  tmr_cancel(&wsc->tmr_kick);
+  wsc->ws = mem_deref(wsc->ws);
+  
 
 }
 
@@ -485,7 +520,7 @@ static int wsc_alloc( struct ws_client **wscp
     return EINVAL;
   }
 
-  error("[WS] attempting connection via %j\n", bind);
+  error("[WS:wsc_alloc] FOR %j\n", bind);
 
   wsc = mem_zalloc(sizeof(*wsc), wsc_destructor);
   if (!wsc)
@@ -506,7 +541,7 @@ static int wsc_alloc( struct ws_client **wscp
   if (err)
     goto out;
 
-  err = dnsc_alloc(&wsc->dnsc, NULL, &dns, 1);
+  err = dnsc_alloc_bind(&wsc->dnsc, NULL, bind, &dns, 1);
   if (err)
     goto out;
 
@@ -538,6 +573,9 @@ static int wsc_alloc( struct ws_client **wscp
            , &module_wsc_tmr_kick_h
            , wsc
            );
+
+  wsc->start_jiffy = tmr_jiffies();
+  wsc->last_jiffy = wsc->start_jiffy;
 
 out:
   if (err) {
@@ -689,14 +727,54 @@ static bool module_maintain_wsc_sort_h(struct le *le1, struct le *le2, void *arg
 
   (void)arg;
 
-  return wsc_1->last_jiffy >= wsc_2->last_jiffy;
+  if (wsc_1->last_jiffy >= wsc_2->last_jiffy)
+    return true;
+
+  return false;
+}
+
+static bool netevents_interfaces_apply_helper( struct netevent_event *event
+                                             , void *arg )
+{
+  int err = 0;
+  struct ws_client *wsc = NULL;
+  struct this_module *mod = arg;
+
+  info("netevents_interfaces_apply_helper\n");
+
+  err = wsc_alloc(&wsc, mod, &event->sa, 0);
+  if (err)
+    goto out;
+  list_append(&mod->ws_clients, &wsc->le, wsc);
+
+out:
+  return false;
 }
 
 static void module_maintain_tmr_h( void *arg )
 {
+  struct ws_client *wsc = NULL;
   struct this_module *mod = arg;
 
   list_sort(&mod->ws_clients, &module_maintain_wsc_sort_h, mod);
+
+  /* take out the trash... */
+  list_flush( &mod->ws_clients_flush );
+
+  wsc = list_ledata(list_head(&mod->ws_clients));
+  if ( wsc ) {
+#if 0
+    if ( wsc->last_jiffy
+      && (tmr_jiffies() - wsc->last_jiffy >= WEBSOCKET_CONNECTION_LAGOUT_MS)) {
+      wsc = mem_deref( wsc );
+    }
+#endif
+  } else {
+    /* no items? get adapters and attempt to reconnect all endpoints */
+    (void)netevents_interfaces_apply( everip_netevents()
+                                    , &netevents_interfaces_apply_helper
+                                    , mod);
+  }
 
   /* rebind */
   tmr_start( &mod->tmr_maintain
@@ -712,6 +790,7 @@ static void module_destructor(void *data)
   /*mod->wsc = mem_deref(mod->wsc);*/
 
   list_flush( &mod->ws_clients );
+  list_flush( &mod->ws_clients_flush );
 
   hash_flush( mod->peers );
   mod->peers = mem_deref( mod->peers );
@@ -729,6 +808,9 @@ static int module_init(void)
     return ENOMEM;
 
   hash_alloc(&g_mod->peers, 16);
+
+  list_init( &g_mod->ws_clients );
+  list_init( &g_mod->ws_clients_flush );
 
   err = magi_eventdriver_handler_register( everip_eventdriver()
                                          , MAGI_EVENTDRIVER_WATCH_NETEVENT
