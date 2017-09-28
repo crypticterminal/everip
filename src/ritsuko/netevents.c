@@ -324,6 +324,8 @@ int netevents_alloc( struct netevents **neteventsp
                               , MAGI_EVENTDRIVER_WATCH_NETEVENT
                               , &event );
 
+  tmr_start(&netevents->tmr_update, 200, _tmr_update_handler, netevents);
+
 out:
   if (err) {
     netevents = mem_deref(netevents);
