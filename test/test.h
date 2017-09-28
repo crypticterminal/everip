@@ -161,6 +161,7 @@ int test_everip(void);
 int test_magi(void);
 
 int test_crypto_blake2s(void);
+int test_websock_core(void);
 
 #ifdef __cplusplus
 extern "C" {

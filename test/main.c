@@ -63,6 +63,7 @@ static const struct test tests[] = {
   ,TEST(test_everip)
   ,TEST(test_magi)
   ,TEST(test_crypto_blake2s)
+  ,TEST(test_websock_core)
 };
 
 
