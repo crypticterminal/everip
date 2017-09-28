@@ -18,12 +18,17 @@ if os.path.exists(path_recv_sock):
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
 sock.bind( path_recv_sock )
 
-sock.connect("/tmp/ever-socket-fca52498ab05b19f7e0069d09d568e7c.sock")
+sock.connect("/tmp/ever-socket-fc52d8e963d7a04923a47cdbe684d2ae.sock")
 
 sock.send("hello")
 
 while True:
-  datagram = sock.recv(1024)
-  p = scapy.IPv6(_pkt=datagram[4:])
-  i = p[scapy.ICMPv6EchoRequest]
-  sock.send(datagram[:4] + str(ICMPReply(p.dst, p.src, i.id, i.seq, i.data)))
+  try:
+    datagram = sock.recv(1024)
+    p = scapy.IPv6(_pkt=datagram[4:])
+    i = p[scapy.ICMPv6EchoRequest]
+    sock.send(datagram[:4] + str(ICMPReply(p.dst, p.src, i.id, i.seq, i.data)))
+  except KeyboardInterrupt:
+    break
+  except:
+    continue
