@@ -359,6 +359,8 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
            , &event->sa
            );
         break;
+      default:
+        goto out;
     }
 
   }
@@ -622,6 +624,11 @@ struct magi_melchior *everip_magi_melchior(void)
 struct magi_eventdriver *everip_eventdriver(void)
 {
   return everip.eventdriver;
+}
+
+struct netevents *everip_netevents(void)
+{
+  return everip.netevents;
 }
 
 struct ledbat *everip_ledbat(void)

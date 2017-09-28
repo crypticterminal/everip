@@ -181,6 +181,49 @@ out:
   return false;
 }
 
+struct _interfaces_apply_s {
+  struct netevents *ne;
+  netevents_interfaces_apply_h *fn;
+  void *arg;
+};
+
+static bool _interfaces_apply_h(struct le *le, void *arg)
+{
+  struct netevent_event event;
+  struct _interface *iface = le->data;
+  struct _interfaces_apply_s *apply = arg;
+
+  memset(&event, 0, sizeof(event));
+
+  event.ne = apply->ne;
+  event.type = NETEVENT_EVENT_ADDR_EXISTS;
+  event.if_name = iface->ifname;
+  sa_cpy(&event.sa, &iface->sa);
+
+  return apply->fn(&event, apply->arg);
+}
+
+int netevents_interfaces_apply( struct netevents *ne
+                              , netevents_interfaces_apply_h *fn
+                              , void *arg)
+{
+  struct _interfaces_apply_s apply;
+
+  if (!ne || !fn)
+    return EINVAL;
+
+  apply.ne = ne;
+  apply.fn = fn;
+  apply.arg = arg;
+
+  (void)list_ledata(list_apply( &ne->interfaces
+                              , true
+                              , &_interfaces_apply_h
+                              , &apply ));
+
+  return 0;
+}
+
 static void _tmr_update_handler(void *arg)
 {
   int err = 0;

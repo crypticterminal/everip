@@ -930,6 +930,7 @@ enum NETEVENT_EVENT {
    , NETEVENT_EVENT_DEV_DOWN = 3
    , NETEVENT_EVENT_ADDR_NEW = 4
    , NETEVENT_EVENT_ADDR_DEL = 5
+   , NETEVENT_EVENT_ADDR_EXISTS = 6
 };
 
 struct netevents;
@@ -942,8 +943,19 @@ struct netevent_event {
   struct sa sa;
 };
 
+/**
+ * Defines the list apply handler
+ *
+ * @param event  Netevent event
+ * @param arg Handler argument
+ *
+ * @return true to stop traversing, false to continue
+ */
+typedef bool (netevents_interfaces_apply_h)(struct netevent_event *event, void *arg);
+
 int netevents_alloc( struct netevents **neteventsp, struct magi_eventdriver *ed );
 int netevents_runner_alloc( struct netevents_runner **nerp, struct mqueue *mq );
+int netevents_interfaces_apply( struct netevents *ne , netevents_interfaces_apply_h *fn , void *arg);
 
 /*
  * User Interface
@@ -1037,6 +1049,7 @@ struct network *everip_network(void);
 struct magi *everip_magi(void);
 struct magi_melchior *everip_magi_melchior(void);
 struct magi_eventdriver *everip_eventdriver(void);
+struct netevents *everip_netevents(void);
 struct ledbat *everip_ledbat(void);
 struct commands *everip_commands(void);
 struct noise_engine *everip_noise(void);
