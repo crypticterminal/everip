@@ -92,7 +92,6 @@ static struct this_module *g_mod = NULL;
 
 static const char g_useragent[] = "ConnectFree(R) EVER/IP(R) v" EVERIP_VERSION;
 
-static void module_wsc_tmr_retry_h( void *arg );
 static int wsc_alloc( struct ws_client **wscp
                     , struct this_module *mod
                     , const struct sa *bind
