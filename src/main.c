@@ -170,7 +170,7 @@ int main(int argc, char *argv[])
   if (err)
     goto out;
 
-  info("EVER/IP(R) is READY.\n\n");
+  info("[CORE] EVER/IP(R) is READY.\n\n");
 
   err = re_main(signal_handler);
 
