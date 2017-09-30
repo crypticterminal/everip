@@ -156,3 +156,39 @@ out:
   }
   return err;
 }
+
+/* platform stuff*/
+
+int netevents_platform_getkind( const char* ifname
+                              , enum NETEVENTS_IFACE_KIND *kindp )
+{
+  int err = 0;
+  err = re_regex(ifname, strlen(ifname), "lo[a-z0-9]+", NULL);
+  if (!err) {
+    *kindp = NETEVENTS_IFACE_KIND_LOOPBACK;
+    goto out;
+  }
+
+  err = re_regex(ifname, strlen(ifname), "utun[a-z0-9]+", NULL);
+  if (!err) {
+    *kindp = NETEVENTS_IFACE_KIND_IPTUNNEL;
+    goto out;
+  }
+
+  /* special detection for wireless? */
+
+
+  /* default should be ethernet */
+  err = re_regex(ifname, strlen(ifname), "en[a-z0-9]+", NULL);
+  if (!err) {
+    *kindp = NETEVENTS_IFACE_KIND_ETHERNET;
+    goto out;
+  }
+
+  *kindp = NETEVENTS_IFACE_KIND_UNKNOWN;
+  err = 0;
+
+out:
+  return err;
+}
+

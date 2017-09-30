@@ -52,8 +52,9 @@ int conduits_debug(struct re_printf *pf, const struct conduits *conduits)
   LIST_FOREACH(&conduits->condl, le) {
     c = le->data;
     err  |= re_hprintf( pf
-                      , "■ %s\t%s%s\t(%s)\n%H"
+                      , "■ %s\t%s%s%s\t(%s)\n%H"
                       , c->name
+                      , c->flags & CONDUIT_FLAG_DISABLED ? "[DISABLED]" : ""
                       , c->flags & CONDUIT_FLAG_BCAST ? "[BCAST]" : ""
                       , c->flags & CONDUIT_FLAG_VIRTUAL ? "[VIRTUAL]" : ""
                       , c->desc
@@ -359,14 +360,6 @@ conduits_conduit_peer_search( struct conduits *conduits
   return cp;
 }
 
-static void conduit_destructor(void *data)
-{
-  struct conduit *c = data;
-
-  c->name = mem_deref(c->name);
-  c->desc = mem_deref(c->desc);
-}
-
 int conduit_register_peer_create( struct conduit *conduit
                                 , conduit_peer_create_h *peer_create_h
                                 , void *peer_create_h_arg )
@@ -417,13 +410,24 @@ int conduit_register_search_handler( struct conduit *conduit
   return 0;
 }
 
+static void conduit_destructor(void *data)
+{
+  struct conduit *c = data;
+
+  c->name = mem_deref(c->name);
+  c->desc = mem_deref(c->desc);
+
+  list_unlink(&c->le);
+  list_flush(&c->peers);
+}
+
 /**
  * Register conduits
  *
  *
  * @return 0 if success, otherwise errorcode
  */
-int conduits_register( struct conduit **conduit
+int conduits_register( struct conduit **conduitp
                      , struct conduits *conduits
                      , uint8_t flags
                      , const char *name
@@ -445,12 +449,42 @@ int conduits_register( struct conduit **conduit
 
   c->flags = flags;
 
-  *conduit = c;
+  *conduitp = c;
 
   list_append(&conduits->condl, &c->le, c);
 
+  c->registered = true;
+
   return 0;
 }
+
+struct conduit *conduits_unregister( struct conduit *conduit )
+{
+  int nrefs = 0;
+
+  if (!conduit)
+    return NULL;
+
+  nrefs = mem_nrefs(conduit);
+
+  if (conduit->registered) {
+    conduit->flags |= CONDUIT_FLAG_DISABLED;
+    conduit->registered = false;
+
+    /* reset all handlers */
+    conduit->peer_create_h = NULL;
+    conduit->send_h = NULL;
+    conduit->debug_h = NULL;
+    conduit->search_h = NULL;
+
+    mem_deref( conduit );
+    nrefs--;
+  }
+
+  return nrefs > 0 ? conduit : NULL;
+}
+
+
 
 static void conduits_beacon_cb( void *data )
 {

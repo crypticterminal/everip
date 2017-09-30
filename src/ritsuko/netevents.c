@@ -33,6 +33,7 @@ struct _interface {
   struct le le;
   char *ifname;
   unsigned int ifindex;
+  enum NETEVENTS_IFACE_KIND ifkind;
   struct sa sa;
   bool touch_if;
   bool touch_sa;
@@ -98,6 +99,7 @@ static bool _if_handler( const char *ifname
       str_dup(&_iface->ifname, ifname);
       _iface->ifmarker = true;
       _iface->ifindex = if_nametoindex(ifname);
+      (void)netevents_platform_getkind(ifname, &_iface->ifkind );
       /* set touch to true because we reset on the sweep */
       _iface->touch_if = true;
       _iface->touch_sa = true;
@@ -114,6 +116,11 @@ static bool _if_handler( const char *ifname
         event.if_index = _iface->ifindex;
       }
 
+      if (_iface->ifkind != NETEVENTS_IFACE_KIND_UNKNOWN) {
+        event.if_options |= NETEVENT_EVENT_OPT_KIND;
+        event.if_kind = _iface->ifkind;
+      }
+
       magi_eventdriver_handler_run( ne->ed
                                   , MAGI_EVENTDRIVER_WATCH_NETEVENT
                                   , &event );
@@ -123,6 +130,7 @@ static bool _if_handler( const char *ifname
     str_dup(&_iface->ifname, ifname);
     sa_cpy(&_iface->sa, sa);
     _iface->ifindex = if_nametoindex(ifname);
+    (void)netevents_platform_getkind(ifname, &_iface->ifkind );
     /* set touch to true because we reset on the sweep */
     _iface->touch_if = true;
     _iface->touch_sa = true;
@@ -139,6 +147,10 @@ static bool _if_handler( const char *ifname
     if (_iface->ifindex) {
       event.if_options |= NETEVENT_EVENT_OPT_INDEX;
       event.if_index = _iface->ifindex;
+    }
+    if (_iface->ifkind != NETEVENTS_IFACE_KIND_UNKNOWN) {
+      event.if_options |= NETEVENT_EVENT_OPT_KIND;
+      event.if_kind = _iface->ifkind;
     }
 
     magi_eventdriver_handler_run( ne->ed
@@ -169,6 +181,10 @@ static bool interfaces_sweep_apply_h(struct le *le, void *arg)
         event.if_options |= NETEVENT_EVENT_OPT_INDEX;
         event.if_index = iface->ifindex;
       }
+      if (iface->ifkind != NETEVENTS_IFACE_KIND_UNKNOWN) {
+        event.if_options |= NETEVENT_EVENT_OPT_KIND;
+        event.if_kind = iface->ifkind;
+      }
 
       magi_eventdriver_handler_run( ne->ed
                                   , MAGI_EVENTDRIVER_WATCH_NETEVENT
@@ -188,6 +204,10 @@ static bool interfaces_sweep_apply_h(struct le *le, void *arg)
     if (iface->ifindex) {
       event.if_options |= NETEVENT_EVENT_OPT_INDEX;
       event.if_index = iface->ifindex;
+    }
+    if (iface->ifkind != NETEVENTS_IFACE_KIND_UNKNOWN) {
+      event.if_options |= NETEVENT_EVENT_OPT_KIND;
+      event.if_kind = iface->ifkind;
     }
 
     magi_eventdriver_handler_run( ne->ed

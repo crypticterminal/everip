@@ -157,3 +157,42 @@ out:
   }
   return err;
 }
+
+/* platform stuff */
+
+static bool _iswireless(const char* ifname)
+{
+  int fd = -1;
+  struct iwreq pwrq;
+  bool result = false;
+
+  memset(&pwrq, 0, sizeof(pwrq));
+  strncpy(pwrq.ifr_name, ifname, IFNAMSIZ);
+
+  fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) {
+    return false;
+  }
+
+  if (ioctl(fd, SIOCGIWNAME, &pwrq) != -1) {
+    result = true;
+  }
+
+  close(fd);
+  return result;
+}
+
+int netevents_platform_getkind( const char* ifname
+                              , enum NETEVENTS_IFACE_KIND *kindp )
+{
+  int err = 0;
+  enum NETEVENTS_IFACE_KIND kind = NETEVENTS_IFACE_KIND_UNKNOWN;
+
+  if (_iswireless(ifname)) {
+    kind = NETEVENTS_IFACE_KIND_WIRELESS;
+  }
+
+  *kindp = kind;
+
+  return err;
+}

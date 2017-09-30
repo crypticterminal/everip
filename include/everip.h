@@ -572,13 +572,17 @@ typedef int (conduit_debug_h)(struct re_printf *pf, void *arg);
 
 typedef int (conduit_search_h)(const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH], void *arg);
 
-#define CONDUIT_FLAG_BCAST   (1<<0) /* this conduit can broadcast messages */
-#define CONDUIT_FLAG_VIRTUAL (1<<1) /* for things like tree of life */
+#define CONDUIT_FLAG_DISABLED (1<<0) /* conduit is disabled and cannot be used */
+#define CONDUIT_FLAG_BCAST    (1<<1) /* this conduit can broadcast messages */
+#define CONDUIT_FLAG_VIRTUAL  (1<<2) /* for things like tree of life */
 
 struct conduit {
   struct le le; /* struct conduits */
   struct conduits *ctx;
 
+  struct list peers;
+
+  bool registered;
   uint8_t flags;
 
   char *name;
@@ -600,7 +604,8 @@ struct conduit {
 #define CONDUIT_PEER_FLAG_BCAST (1<<0)
 
 struct conduit_peer {
-  struct le le_addr;
+  struct le le_addr; /* struct conduits */
+  struct le le_conduit; /* struct conduit */
   uint8_t flags;
   uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
   struct conduit *conduit;
@@ -675,11 +680,12 @@ int conduits_init( struct conduits **conduitsp
                  , struct csock *csock
                  , struct magi_eventdriver *ed );
 
-int conduits_register( struct conduit **conduit
+int conduits_register( struct conduit **conduitp
                      , struct conduits *conduits
                      , uint8_t flags
                      , const char *name
                      , const char *desc );
+struct conduit *conduits_unregister( struct conduit *conduit );
 
 #define conduit_find conduit_find_byname
 struct conduit *conduit_find_byname( const struct conduits *conduits , const char *name );
@@ -936,20 +942,49 @@ enum NETEVENT_EVENT {
 struct netevents;
 struct netevents_runner;
 
+enum NETEVENTS_IFACE_KIND {
+     NETEVENTS_IFACE_KIND_UNKNOWN  = 0
+   , NETEVENTS_IFACE_KIND_LOOPBACK = 1
+   , NETEVENTS_IFACE_KIND_ETHERNET = 2
+   , NETEVENTS_IFACE_KIND_WIRELESS = 3
+   , NETEVENTS_IFACE_KIND_IPTUNNEL = 4
+};
+
 struct netevent_event {
   struct netevents *ne;
   enum NETEVENT_EVENT type;
 
-#define NETEVENT_EVENT_OPT_NAME  0x1
-#define NETEVENT_EVENT_OPT_INDEX 0x2
-#define NETEVENT_EVENT_OPT_ADDR  0x4
-  uint8_t if_options;
+#define NETEVENT_EVENT_OPT_NAME  (1<<0)
+#define NETEVENT_EVENT_OPT_INDEX (1<<1)
+#define NETEVENT_EVENT_OPT_ADDR  (1<<2)
+#define NETEVENT_EVENT_OPT_KIND  (1<<3)
+  uint16_t if_options;
 
   const char *if_name;
   unsigned int if_index;
+  enum NETEVENTS_IFACE_KIND if_kind;
 
   struct sa sa;
 };
+
+static inline const char * netevents_iface_kind_tostr(enum NETEVENTS_IFACE_KIND kind)
+{
+  switch (kind) {
+    case NETEVENTS_IFACE_KIND_UNKNOWN:
+      return "UNKNOWN";
+    case NETEVENTS_IFACE_KIND_LOOPBACK:
+      return "LOOPBACK";
+    case NETEVENTS_IFACE_KIND_ETHERNET:
+      return "ETHERNET";
+    case NETEVENTS_IFACE_KIND_WIRELESS:
+      return "WIRELESS";
+    case NETEVENTS_IFACE_KIND_IPTUNNEL:
+      return "IPTUNNEL";
+    default:
+      break;
+  }
+  return "UNKNOWN";
+}
 
 /**
  * Defines the list apply handler
@@ -964,6 +999,9 @@ typedef bool (netevents_interfaces_apply_h)(struct netevent_event *event, void *
 int netevents_alloc( struct netevents **neteventsp, struct magi_eventdriver *ed );
 int netevents_runner_alloc( struct netevents_runner **nerp, struct mqueue *mq );
 int netevents_interfaces_apply( struct netevents *ne , netevents_interfaces_apply_h *fn , void *arg);
+
+/* platform specific */
+int netevents_platform_getkind( const char* ifname, enum NETEVENTS_IFACE_KIND *kindp );
 
 /*
  * User Interface
