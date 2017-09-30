@@ -946,7 +946,7 @@ struct netevent_event {
   uint8_t if_options;
 
   const char *if_name;
-  int if_index;
+  unsigned int if_index;
 
   struct sa sa;
 };

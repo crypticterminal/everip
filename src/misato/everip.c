@@ -347,14 +347,16 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
         break;
       case NETEVENT_EVENT_DEV_UP:
       case NETEVENT_EVENT_DEV_DOWN:
-        info( "[NETEVENT] IF [%s] is %s\n"
+        info( "[NETEVENT] IF [%s@%u] is %s\n"
            , event->if_name
+           , event->if_index
            , event->type == NETEVENT_EVENT_DEV_UP ? "UP" : "DOWN");
         break;
       case NETEVENT_EVENT_ADDR_NEW:
       case NETEVENT_EVENT_ADDR_DEL:
-        info( "[NETEVENT] IF [%s] ADDR %s %j\n"
+        info( "[NETEVENT] IF [%s@%u] ADDR %s %j\n"
            , event->if_name
+           , event->if_index
            , event->type == NETEVENT_EVENT_ADDR_NEW ? "NEW" : "DEL"
            , &event->sa
            );
@@ -565,8 +567,8 @@ skip_tun:
   /* conduits*/
   module_preload("null");
   module_preload("udp");
-  module_preload("eth");
-  module_preload("web");
+  /*module_preload("eth");
+  module_preload("web");*/
 
   /* virtual */
   module_preload("treeoflife");

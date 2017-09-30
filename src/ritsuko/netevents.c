@@ -18,6 +18,8 @@
 #include <re.h>
 #include <everip.h>
 
+#include <net/if.h>
+
 struct netevents {
   struct magi_eventdriver *ed;
   struct netevents_runner *ner;
@@ -30,6 +32,7 @@ struct netevents {
 struct _interface {
   struct le le;
   char *ifname;
+  unsigned int ifindex;
   struct sa sa;
   bool touch_if;
   bool touch_sa;
@@ -94,6 +97,7 @@ static bool _if_handler( const char *ifname
       _iface = mem_zalloc(sizeof(*_iface), _interface_destructor);
       str_dup(&_iface->ifname, ifname);
       _iface->ifmarker = true;
+      _iface->ifindex = if_nametoindex(ifname);
       /* set touch to true because we reset on the sweep */
       _iface->touch_if = true;
       _iface->touch_sa = true;
@@ -105,6 +109,10 @@ static bool _if_handler( const char *ifname
       event.type = NETEVENT_EVENT_DEV_UP;
       event.if_options = NETEVENT_EVENT_OPT_NAME;
       event.if_name = ifname;
+      if (_iface->ifindex) {
+        event.if_options |= NETEVENT_EVENT_OPT_INDEX;
+        event.if_index = _iface->ifindex;
+      }
 
       magi_eventdriver_handler_run( ne->ed
                                   , MAGI_EVENTDRIVER_WATCH_NETEVENT
@@ -114,6 +122,7 @@ static bool _if_handler( const char *ifname
     _iface = mem_zalloc(sizeof(*_iface), _interface_destructor);
     str_dup(&_iface->ifname, ifname);
     sa_cpy(&_iface->sa, sa);
+    _iface->ifindex = if_nametoindex(ifname);
     /* set touch to true because we reset on the sweep */
     _iface->touch_if = true;
     _iface->touch_sa = true;
@@ -127,6 +136,10 @@ static bool _if_handler( const char *ifname
     event.if_options = NETEVENT_EVENT_OPT_NAME | NETEVENT_EVENT_OPT_ADDR;
     event.if_name = ifname;
     sa_cpy(&event.sa, sa);
+    if (_iface->ifindex) {
+      event.if_options |= NETEVENT_EVENT_OPT_INDEX;
+      event.if_index = _iface->ifindex;
+    }
 
     magi_eventdriver_handler_run( ne->ed
                                 , MAGI_EVENTDRIVER_WATCH_NETEVENT
@@ -152,6 +165,10 @@ static bool interfaces_sweep_apply_h(struct le *le, void *arg)
       event.type = NETEVENT_EVENT_DEV_DOWN;
       event.if_options = NETEVENT_EVENT_OPT_NAME;
       event.if_name = iface->ifname;
+      if (iface->ifindex) {
+        event.if_options |= NETEVENT_EVENT_OPT_INDEX;
+        event.if_index = iface->ifindex;
+      }
 
       magi_eventdriver_handler_run( ne->ed
                                   , MAGI_EVENTDRIVER_WATCH_NETEVENT
@@ -168,6 +185,10 @@ static bool interfaces_sweep_apply_h(struct le *le, void *arg)
     event.if_options = NETEVENT_EVENT_OPT_NAME | NETEVENT_EVENT_OPT_ADDR;
     event.if_name = iface->ifname;
     sa_cpy(&event.sa, &iface->sa);
+    if (iface->ifindex) {
+      event.if_options |= NETEVENT_EVENT_OPT_INDEX;
+      event.if_index = iface->ifindex;
+    }
 
     magi_eventdriver_handler_run( ne->ed
                                 , MAGI_EVENTDRIVER_WATCH_NETEVENT
@@ -206,6 +227,10 @@ static bool _interfaces_apply_h(struct le *le, void *arg)
   if (!iface->ifmarker) {
     event.if_options |= NETEVENT_EVENT_OPT_ADDR;
     sa_cpy(&event.sa, &iface->sa);
+  }
+  if (iface->ifindex) {
+    event.if_options |= NETEVENT_EVENT_OPT_INDEX;
+    event.if_index = iface->ifindex;
   }
 
   return apply->fn(&event, apply->arg);
