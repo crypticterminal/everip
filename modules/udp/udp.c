@@ -17,16 +17,22 @@
 
 #include <re.h>
 #include <everip.h>
-#include <string.h>
 
-struct udp_csock {
-  struct udp_sock *us;
-  struct udp_sock *us_bcast;
-  uint16_t port;
+struct this_module;
 
+struct this_module {
+  struct list udp_engines;
+};
+
+struct udp_engine {
+  struct le le; /* struct this_module */
   struct conduit *conduit;
   struct hash *peers;
+
+  struct sa bound;
   struct sa group;
+  struct udp_sock *us;
+  struct udp_sock *us_bcast;
 };
 
 struct udp_peer {
@@ -34,6 +40,10 @@ struct udp_peer {
   struct le le;
   struct sa sa;
 };
+
+static struct this_module *g_mod = NULL;
+
+/* ----------- debug code ----------- */
 
 static bool _peer_debug(struct le *le, void *arg)
 {
@@ -46,68 +56,40 @@ static bool _peer_debug(struct le *le, void *arg)
 static int _conduit_debug(struct re_printf *pf, void *arg)
 {
   int err = 0;
-  struct udp_csock *udp_c = arg;
-
-  hash_apply(udp_c->peers, _peer_debug, pf);
-
+  struct udp_engine *ue = arg;
+  hash_apply(ue->peers, _peer_debug, pf);
   return err;
 }
 
-static int _sendto_outside(struct conduit_peer *peer, struct mbuf *mb, void *arg)
+/* ----------- peer/conduit code ----------- */
+
+static int _sendto_outside( struct conduit_peer *peer
+                          , struct mbuf *mb
+                          , void *arg )
 {
   int err = 0;
-  struct udp_peer *up;
-  struct udp_csock *udp_c = arg;
+  struct udp_peer *up = NULL;
+  struct udp_engine *ue = arg;
 
-  if (!peer || !udp_c)
+  if (!peer || !ue)
     return EINVAL;
 
   if (peer->flags & CONDUIT_PEER_FLAG_BCAST) {
-    /*debug("Broadcasting! [%W]\n", mbuf_buf(mb), mbuf_get_left(mb));*/
-    (void)udp_send(udp_c->us, &udp_c->group, mb);
+    /*info("Broadcasting via %J [%W]\n", &ue->bound, mbuf_buf(mb), mbuf_get_left(mb));*/
+    (void)udp_send(ue->us, &ue->group, mb);
   } else {
     up = container_of(peer, struct udp_peer, cp);
 
-    debug( "got %zu bytes of data FOR %J\n"
+    /*debug( "got %zu bytes of data FOR %J\n"
          , mbuf_get_left(mb)
-         , &up->sa);
-    
-    (void)udp_send(udp_c->us, &up->sa, mb);
+         , &up->sa);*/
+
+    (void)udp_send(ue->us, &up->sa, mb);
+
   }
+
   return err;
 }
-
-// static struct csock *udp_handle_incoming( struct csock *csock
-//                                        , struct mbuf *mb )
-// {
-//  struct udp_csock *udp_c = (struct udp_csock *)csock;
-//  struct sa *dst;
-//  struct sa bcast;
-//  size_t pfix = mb->pos;
-// 
-//  mbuf_set_pos(mb, 0);
-//  struct csock_addr *csaddr = (struct csock_addr *)(void *)mbuf_buf(mb);
-// 
-//  if (csaddr->flags & CSOCK_ADDR_BCAST) {
-//    return NULL; /* not available on UDP */
-//  }
-// 
-//  if (csaddr->flags & CSOCK_ADDR_BCAST) {
-//    sa_set_str(&bcast, "255.255.255.255", udp_c->port);
-//    dst = &bcast;
-//  } else {
-//    dst = &csaddr->a.sa;
-//  }
-// 
-//  mbuf_set_pos(mb, pfix);
-// 
-//  debug("got %zu bytes of data FOR %J (salen=%u)\n",
-//      mbuf_get_left(mb), dst, dst->len);
-// 
-//  (void)udp_send(udp_c->us, dst, mb);
-// 
-//  return NULL;
-// }
 
 static bool _peer_handler(struct le *le, void *arg)
 {
@@ -124,78 +106,6 @@ static void udp_peer_destructor(void *data)
   list_unlink(&up->le);
 }
 
-static void _recv_handler( struct udp_csock *udp_c
-                         , const struct sa *src
-                         , struct mbuf *mb
-                         , bool is_bcast )
-{
-  struct udp_peer *up = NULL;
-  bool new_peer = false;
-
-  up = list_ledata(hash_lookup( udp_c->peers
-                              , sa_hash(src, SA_ALL)
-                              , _peer_handler
-                              , (void *)src));
-
-  if (!up) {
-    up = mem_zalloc(sizeof(*up), udp_peer_destructor);
-    if (!up)
-      return;
-    new_peer = true;
-    sa_cpy(&up->sa, src);
-    up->cp.conduit = udp_c->conduit;
-    hash_append(udp_c->peers, sa_hash(src, SA_ALL), &up->le, up);
-  }
-
-  if (is_bcast)
-    up->cp.flags |= CONDUIT_PEER_FLAG_BCAST;
-
-  if (conduit_incoming(udp_c->conduit, &up->cp, mb) && new_peer) {
-    up = mem_deref( up );
-  } else if (is_bcast) {
-    /* remove bcast flag */
-    up->cp.flags &= ~(CONDUIT_PEER_FLAG_BCAST);
-  }
-
-}
-
-static void recv_handler(const struct sa *src, struct mbuf *mb, void *arg)
-{
-  struct udp_csock *udp_c = arg;
-  debug( "got %zu bytes of UDP data from %J\n"
-       , mbuf_get_left(mb)
-       , src);
-  _recv_handler(udp_c, src, mb, false);
-}
-
-static void recv_handler_bcast(const struct sa *src, struct mbuf *mb, void *arg)
-{
-  struct udp_csock *udp_c = arg;
-
-  /*debug( "BCAST: got %zu bytes of UDP data from %J\n"
-       , mbuf_get_left(mb)
-       , src);*/
-  _recv_handler(udp_c, src, mb, true);
-}
-
-static void udp_c_destructor(void *data)
-{
-  struct udp_csock *udp_c = data;
-
-  udp_c->us = mem_deref(udp_c->us);
-
-  udp_multicast_leave(udp_c->us_bcast, &udp_c->group);
-  udp_c->us_bcast = mem_deref(udp_c->us_bcast);
-
-  hash_flush( udp_c->peers );
-  udp_c->peers = mem_deref( udp_c->peers );
-
-  udp_c->conduit = mem_deref( udp_c->conduit );
-
-}
-
-static struct udp_csock *udp_c = NULL;
-
 static int _peer_create( struct conduit_peer **peerp
                        , struct pl *key
                        , struct pl *host
@@ -203,6 +113,7 @@ static int _peer_create( struct conduit_peer **peerp
 {
   struct sa laddr;
   struct udp_peer *up = NULL;
+  struct udp_engine *ue = arg;
 
   if (!key || !host)
     return EINVAL;
@@ -219,7 +130,7 @@ static int _peer_create( struct conduit_peer **peerp
     }
   }
 
-  up = list_ledata(hash_lookup( udp_c->peers
+  up = list_ledata(hash_lookup( ue->peers
                               , sa_hash(&laddr, SA_ALL)
                               , _peer_handler
                               , &laddr));
@@ -229,8 +140,8 @@ static int _peer_create( struct conduit_peer **peerp
     if (!up)
       return ENOMEM;
     sa_cpy(&up->sa, &laddr);
-    up->cp.conduit = udp_c->conduit;
-    hash_append(udp_c->peers, sa_hash(&laddr, SA_ALL), &up->le, up);
+    up->cp.conduit = ue->conduit;
+    hash_append(ue->peers, sa_hash(&laddr, SA_ALL), &up->le, up);
   }
 
   debug("registering %J on UDP;\n", &up->sa);
@@ -240,104 +151,348 @@ static int _peer_create( struct conduit_peer **peerp
   return 0;
 }
 
-static int module_init(void)
+
+/* ----------- udp rx code ----------- */
+
+static void _recv_handler( struct udp_engine *ue
+                         , const struct sa *src
+                         , struct mbuf *mb
+                         , bool is_bcast )
+{
+  struct udp_peer *up = NULL;
+  bool new_peer = false;
+
+  up = list_ledata(hash_lookup( ue->peers
+                              , sa_hash(src, SA_ALL)
+                              , _peer_handler
+                              , (void *)src));
+
+  if (!up) {
+    up = mem_zalloc(sizeof(*up), udp_peer_destructor);
+    if (!up)
+      return;
+    new_peer = true;
+    sa_cpy(&up->sa, src);
+    up->cp.conduit = ue->conduit;
+    hash_append(ue->peers, sa_hash(src, SA_ALL), &up->le, up);
+  }
+
+  if (is_bcast)
+    up->cp.flags |= CONDUIT_PEER_FLAG_BCAST;
+
+  if (conduit_incoming(ue->conduit, &up->cp, mb) && new_peer) {
+    up = mem_deref( up );
+  } else if (is_bcast) {
+    /* remove bcast flag */
+    up->cp.flags &= ~(CONDUIT_PEER_FLAG_BCAST);
+  }
+
+}
+
+static void recv_handler(const struct sa *src, struct mbuf *mb, void *arg)
+{
+  struct udp_engine *ue = arg;
+  /*debug( "got %zu bytes of UDP data from %J\n"
+       , mbuf_get_left(mb)
+       , src);*/
+  _recv_handler(ue, src, mb, false);
+}
+
+static void recv_handler_bcast(const struct sa *src, struct mbuf *mb, void *arg)
+{
+  struct udp_engine *ue = arg;
+  /*info( "BCAST got %zu bytes of UDP data from %J\n"
+       , mbuf_get_left(mb)
+       , src);*/
+  _recv_handler(ue, src, mb, true);
+}
+
+/* ----------- udp engines ----------- */
+
+static void udp_engine_destructor(void *data)
+{
+  struct udp_engine *ue = data;
+  list_unlink(&ue->le);
+  udp_multicast_leave(ue->us_bcast, &ue->group);
+  ue->us_bcast = mem_deref( ue->us_bcast );
+  ue->us = mem_deref( ue->us );
+
+  hash_flush( ue->peers );
+  ue->peers = mem_deref( ue->peers );
+
+  ue->conduit = conduits_unregister( ue->conduit );
+  /* are we still holding onto it? */
+  if (ue->conduit)
+    ue->conduit = mem_deref( ue->conduit );
+}
+
+static int udp_engine_alloc( struct udp_engine **uep
+                           , struct this_module *mod
+                           , const char *if_name
+                           , const struct sa *if_addr 
+                           , unsigned int if_index )
 {
   int err = 0;
   struct sa laddr;
+  struct udp_engine *ue = NULL;
 
-  udp_c = mem_zalloc(sizeof(*udp_c), udp_c_destructor);
-  if (!udp_c)
+  char conduit_name[512];
+  char conduit_desc[512];
+
+  if (!uep || !mod || !if_name || !if_addr || !if_index)
+    return EINVAL;
+
+  ue = mem_zalloc(sizeof(*ue), udp_engine_destructor);
+  if (!ue)
     return ENOMEM;
 
-  udp_c->port = everip_udpport_get();
-
-  (void)sa_set_str(&laddr, "0.0.0.0", udp_c->port);
-
-  err = udp_listen(&udp_c->us, &laddr, recv_handler, udp_c);
-  if (err) {
-    re_fprintf(stderr, "udp listen error: %s\n", strerror(err));
+  err = sa_set_str(&ue->group, "ff02::1", 8891);
+  if (err)
     goto out;
-  }
 
-  udp_rxsz_set(udp_c->us, EVER_OUTWARD_MBE_LENGTH * 2); /* MTU 1500 max */
-  udp_rxbuf_presz_set(udp_c->us, EVER_OUTWARD_MBE_POS);
+  err = sa_set_str(&laddr, "::", 8891);
+  if (err)
+    goto out;
 
-  udp_sockbuf_set(udp_c->us, 24000);
-
-  re_printf("listening on UDP socket: %J\n", &laddr);
-
-  /* HANDLE BROADCASTER... */
-
-  (void)sa_set_str(&laddr, "0.0.0.0", 8891);
-
-  err = udp_listen_advanced( &udp_c->us_bcast
+  err = udp_listen_advanced( &ue->us_bcast
                            , &laddr
                            , recv_handler_bcast
                            , true
-                           , udp_c);
+                           , ue);
   if (err) {
-    re_fprintf(stderr, "udp listen error: %s\n", strerror(err));
+    error("[udp] listen error (%m)\n", err);
     goto out;
   }
 
-  switch (sa_af(&laddr)) {
-    case AF_INET:
-      err = sa_set_str(&udp_c->group, "224.0.0.1", 8891);
-      break;
-    case AF_INET6:
-      err = sa_set_str(&udp_c->group, "ff02::1", 8891);
-      break;
-    default:
-      err = EAFNOSUPPORT;
-      break;
+  /* set index sockoption */
+  err = udp_setsockopt( ue->us_bcast
+                      , IPPROTO_IPV6
+                      , IPV6_MULTICAST_IF
+                      , &if_index, sizeof(if_index) );
+  if (err) {
+    error("[udp] could not set index option (%m)\n", err);
+    goto out;
   }
-  if (err)
+
+#if 0
+{
+  int do_loop = 1;
+  err = udp_setsockopt( ue->us
+                      , IPPROTO_IPV6
+                      , IPV6_MULTICAST_LOOP
+                      , &do_loop, sizeof(do_loop) );
+  if (err) {
+    error("[udp] could not set loop option (%m)\n", err);
     goto out;
+  }
+}
+#endif
 
-  err = udp_multicast_join(udp_c->us_bcast, &udp_c->group);
-  if (err)
+#if 1
+  err = udp_multicast_join(ue->us_bcast, &ue->group);
+  if (err) {
+    error("[udp] error joining multicast group %J (%m)\n", &ue->group, err);
     goto out;
+  }
+#endif
 
-  hash_alloc(&udp_c->peers, 16);
+  sa_cpy(&ue->bound, if_addr);
+  sa_set_port(&ue->bound, 0);
 
-  conduits_register( &udp_c->conduit
+  err = udp_listen_advanced( &ue->us
+                           , &ue->bound
+                           , recv_handler
+                           , true
+                           , ue);
+  if (err) {
+    error("[udp] listen error (%m)\n", err);
+    goto out;
+  }
+
+  /* set index sockoption */
+  err = udp_setsockopt( ue->us
+                      , IPPROTO_IPV6
+                      , IPV6_MULTICAST_IF
+                      , &if_index, sizeof(if_index) );
+  if (err) {
+    error("[udp] could not set index option (%m)\n", err);
+    goto out;
+  }
+
+  udp_rxsz_set(ue->us, EVER_OUTWARD_MBE_LENGTH * 2); /* MTU 1500 max */
+  udp_rxbuf_presz_set(ue->us, EVER_OUTWARD_MBE_POS);
+
+  udp_sockbuf_set(ue->us, 24000);
+
+  udp_local_get(ue->us, &ue->bound);
+
+  /* register with conduit system */
+
+  hash_alloc(&ue->peers, 16);
+
+  re_snprintf( conduit_name, sizeof(conduit_name)
+             , "UDP%%%s", if_name);
+  re_snprintf( conduit_desc, sizeof(conduit_desc)
+             , "UDP/IP Driver Conduit on %j", if_addr);
+
+  conduits_register( &ue->conduit
                    , everip_conduits()
                    , CONDUIT_FLAG_BCAST
-                   , "UDP4"
-                   , "UDP/IPv4 Driver Conduit"
+                   , conduit_name
+                   , conduit_desc
                    );
 
-  if (!udp_c->conduit)
-    return ENOMEM;
+  if (!ue->conduit) {
+    err = ENOMEM;
+    goto out;
+  }
 
-  mem_ref( udp_c->conduit );
+  mem_ref( ue->conduit );
 
-  conduit_register_peer_create( udp_c->conduit
+  conduit_register_peer_create( ue->conduit
                               , _peer_create
-                              , udp_c);
+                              , ue);
 
-  conduit_register_send_handler( udp_c->conduit
+  conduit_register_send_handler( ue->conduit
                                , _sendto_outside
-                               , udp_c);
+                               , ue);
 
-  conduit_register_debug_handler( udp_c->conduit
+  conduit_register_debug_handler( ue->conduit
                                 , _conduit_debug
-                                , udp_c );
+                                , ue );
+
 
 out:
   if (err) {
-    mem_deref(udp_c);
+    ue = mem_deref(ue);
+  } else {
+    *uep = ue;
   }
   return err;
 }
 
+/* ----------- module code ----------- */
 
-static int module_close(void)
+static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
+                               , void *data
+                               , void *arg )
 {
-  udp_c = mem_deref(udp_c);
+  int err = 0;
+  struct le *le;
+  struct udp_engine *ue = NULL;
+  struct this_module *mod = arg;
+  struct netevent_event *event = data;
+
+  if (type != MAGI_EVENTDRIVER_WATCH_NETEVENT)
+    goto out;
+
+  /* we require a name each interface */
+  if (!(event->if_options & NETEVENT_EVENT_OPT_NAME))
+    goto out;
+
+  /* we require an index for link local on ipv6 */
+  if (!(event->if_options & NETEVENT_EVENT_OPT_INDEX))
+    goto out;
+
+  /* we check interface kind */
+  if ( !(event->if_options & NETEVENT_EVENT_OPT_KIND)
+    || event->if_kind != NETEVENTS_IFACE_KIND_ETHERNET)
+    goto out;
+
+  if (!sa_isset(&event->sa, SA_ADDR))
+    goto out;
+
+  /* only accept broadcast over ipv6 */
+  if (sa_af(&event->sa) != AF_INET6)
+    goto out;
+
+  /* only bind to link local addresses */
+  if ( !sa_is_linklocal( &event->sa ) )
+    goto out;
+
+  LIST_FOREACH(&mod->udp_engines, le) {
+    ue = le->data;
+    if (sa_cmp(&event->sa, &ue->bound, SA_ADDR)) {
+      break;
+    } else {
+      ue = NULL;
+    }
+  }
+
+  switch(event->type) {
+    case NETEVENT_EVENT_ADDR_NEW:
+      if (ue) {
+        ue = mem_deref(ue);
+      }
+
+      err = udp_engine_alloc(&ue, mod, event->if_name, &event->sa, event->if_index);
+      if (err)
+        goto out;
+
+      list_append(&mod->udp_engines, &ue->le, ue);
+      goto out;
+    case NETEVENT_EVENT_ADDR_DEL:
+      if (ue) {
+        ue = mem_deref(ue);
+      }
+      goto out;
+    default:
+      goto out;
+  }
+
+out:
   return 0;
 }
 
+static void module_destructor(void *data)
+{
+  struct this_module *mod = data;
+  list_flush(&mod->udp_engines);
+}
+
+static int module_init(void)
+{
+  int err = 0;
+
+  g_mod = mem_zalloc(sizeof(*g_mod), module_destructor);
+  if (!g_mod)
+    return ENOMEM;
+
+  list_init(&g_mod->udp_engines);
+
+  /* init net events */
+#if 1
+  err = magi_eventdriver_handler_register( everip_eventdriver()
+                                         , MAGI_EVENTDRIVER_WATCH_NETEVENT
+                                         , magi_event_watcher_h
+                                         , g_mod );
+  if (err) {
+    error("websocket: magi_eventdriver_handler_register\n");
+    return err;
+  }
+#else
+  {
+    struct udp_engine *ue = NULL;
+    (void)sa_set_str(&laddr, "::", 0);
+    err = udp_engine_alloc(&ue, g_mod, &laddr, 0);
+    if (err)
+      goto out;
+
+    list_append(&g_mod->udp_engines, &ue->le, ue);
+  }
+#endif
+
+  if (err) {
+    g_mod = mem_deref(g_mod);
+  }
+  return err;
+}
+
+static int module_close(void)
+{
+  g_mod = mem_deref(g_mod);
+  return 0;
+}
 
 const struct mod_export DECL_EXPORTS(udp) = {
   "udp",
