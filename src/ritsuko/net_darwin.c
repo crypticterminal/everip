@@ -148,8 +148,6 @@ int netevents_runner_alloc( struct netevents_runner **nerp, struct mqueue *mq )
     goto out;
   }
 
-  error("netevents_runner_alloc\n");
-
 out:
   if (err) {
     ner = mem_deref(ner);
