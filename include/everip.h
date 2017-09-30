@@ -939,7 +939,15 @@ struct netevents_runner;
 struct netevent_event {
   struct netevents *ne;
   enum NETEVENT_EVENT type;
+
+#define NETEVENT_EVENT_OPT_NAME  0x1
+#define NETEVENT_EVENT_OPT_INDEX 0x2
+#define NETEVENT_EVENT_OPT_ADDR  0x4
+  uint8_t if_options;
+
   const char *if_name;
+  int if_index;
+
   struct sa sa;
 };
 

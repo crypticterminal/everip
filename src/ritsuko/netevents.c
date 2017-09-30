@@ -103,6 +103,7 @@ static bool _if_handler( const char *ifname
 
       event.ne = ne;
       event.type = NETEVENT_EVENT_DEV_UP;
+      event.if_options = NETEVENT_EVENT_OPT_NAME;
       event.if_name = ifname;
 
       magi_eventdriver_handler_run( ne->ed
@@ -123,6 +124,7 @@ static bool _if_handler( const char *ifname
 
     event.ne = ne;
     event.type = NETEVENT_EVENT_ADDR_NEW;
+    event.if_options = NETEVENT_EVENT_OPT_NAME | NETEVENT_EVENT_OPT_ADDR;
     event.if_name = ifname;
     sa_cpy(&event.sa, sa);
 
@@ -148,6 +150,7 @@ static bool interfaces_sweep_apply_h(struct le *le, void *arg)
 
       event.ne = ne;
       event.type = NETEVENT_EVENT_DEV_DOWN;
+      event.if_options = NETEVENT_EVENT_OPT_NAME;
       event.if_name = iface->ifname;
 
       magi_eventdriver_handler_run( ne->ed
@@ -162,6 +165,7 @@ static bool interfaces_sweep_apply_h(struct le *le, void *arg)
     /* address no longer exists */
     event.ne = ne;
     event.type = NETEVENT_EVENT_ADDR_DEL;
+    event.if_options = NETEVENT_EVENT_OPT_NAME | NETEVENT_EVENT_OPT_ADDR;
     event.if_name = iface->ifname;
     sa_cpy(&event.sa, &iface->sa);
 
@@ -197,8 +201,12 @@ static bool _interfaces_apply_h(struct le *le, void *arg)
 
   event.ne = apply->ne;
   event.type = NETEVENT_EVENT_ADDR_EXISTS;
+  event.if_options |= NETEVENT_EVENT_OPT_NAME;
   event.if_name = iface->ifname;
-  sa_cpy(&event.sa, &iface->sa);
+  if (!iface->ifmarker) {
+    event.if_options |= NETEVENT_EVENT_OPT_ADDR;
+    sa_cpy(&event.sa, &iface->sa);
+  }
 
   return apply->fn(&event, apply->arg);
 }
