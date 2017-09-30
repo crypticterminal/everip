@@ -739,8 +739,6 @@ static bool netevents_interfaces_apply_helper( struct netevent_event *event
   struct ws_client *wsc = NULL;
   struct this_module *mod = arg;
 
-  info("netevents_interfaces_apply_helper\n");
-
   err = wsc_alloc(&wsc, mod, &event->sa, 0);
   if (err)
     goto out;
