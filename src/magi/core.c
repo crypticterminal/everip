@@ -65,7 +65,7 @@ int magi_node_ledbat_sock_set( struct magi_node *mnode
   if (!mnode)
     return EINVAL;
 
-  error("\nmagi_node_ledbat_sock_set <%p><%p>\n", mnode, lsock);
+  /*error("\nmagi_node_ledbat_sock_set <%p><%p>\n", mnode, lsock);*/
 
   mnode->ls = mem_deref(mnode->ls);
 
