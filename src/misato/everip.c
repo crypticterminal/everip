@@ -569,8 +569,8 @@ skip_tun:
   /* conduits*/
   module_preload("null");
   module_preload("udp");
-  /*module_preload("eth");
-  module_preload("web");*/
+  /*module_preload("eth");*/
+  module_preload("web");
 
   /* virtual */
   module_preload("treeoflife");
