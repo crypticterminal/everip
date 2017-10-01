@@ -33,6 +33,7 @@ struct udp_engine {
   struct sa group;
   struct udp_sock *us;
   struct udp_sock *us_bcast;
+  unsigned int if_index;
 };
 
 struct udp_peer {
@@ -159,6 +160,7 @@ static void _recv_handler( struct udp_engine *ue
                          , struct mbuf *mb
                          , bool is_bcast )
 {
+  int err = 0;
   struct udp_peer *up = NULL;
   bool new_peer = false;
 
@@ -180,7 +182,9 @@ static void _recv_handler( struct udp_engine *ue
   if (is_bcast)
     up->cp.flags |= CONDUIT_PEER_FLAG_BCAST;
 
-  if (conduit_incoming(ue->conduit, &up->cp, mb) && new_peer) {
+  err = conduit_incoming(ue->conduit, &up->cp, mb);
+
+  if (err && err != EALREADY) {
     up = mem_deref( up );
   } else if (is_bcast) {
     /* remove bcast flag */
@@ -213,7 +217,7 @@ static void udp_engine_destructor(void *data)
 {
   struct udp_engine *ue = data;
   list_unlink(&ue->le);
-  udp_multicast_leave(ue->us_bcast, &ue->group);
+  udp_multicast_leave(ue->us_bcast, &ue->group, ue->if_index);
   ue->us_bcast = mem_deref( ue->us_bcast );
   ue->us = mem_deref( ue->us );
 
@@ -246,6 +250,10 @@ static int udp_engine_alloc( struct udp_engine **uep
   if (!ue)
     return ENOMEM;
 
+  ue->if_index = if_index;
+
+  sa_cpy(&ue->bound, if_addr);
+
   err = sa_set_str(&ue->group, "ff02::1", 8891);
   if (err)
     goto out;
@@ -264,6 +272,7 @@ static int udp_engine_alloc( struct udp_engine **uep
     goto out;
   }
 
+#if 1
   /* set index sockoption */
   err = udp_setsockopt( ue->us_bcast
                       , IPPROTO_IPV6
@@ -273,6 +282,7 @@ static int udp_engine_alloc( struct udp_engine **uep
     error("[udp] could not set index option (%m)\n", err);
     goto out;
   }
+#endif
 
 #if 0
 {
@@ -289,14 +299,14 @@ static int udp_engine_alloc( struct udp_engine **uep
 #endif
 
 #if 1
-  err = udp_multicast_join(ue->us_bcast, &ue->group);
+  err = udp_multicast_join(ue->us_bcast, &ue->group, ue->if_index);
   if (err) {
     error("[udp] error joining multicast group %J (%m)\n", &ue->group, err);
     goto out;
   }
 #endif
 
-  sa_cpy(&ue->bound, if_addr);
+  
   sa_set_port(&ue->bound, 0);
 
   err = udp_listen_advanced( &ue->us

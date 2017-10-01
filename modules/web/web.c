@@ -407,7 +407,9 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
       if (err_proto || !wp)
         goto out;
 
-      if (conduit_incoming(wsc->ctx->conduit, &wp->cp, mb) && new_peer) {
+      err_proto = conduit_incoming(wsc->ctx->conduit, &wp->cp, mb);
+
+      if (err_proto && err_proto != EALREADY) {
         wp = mem_deref( wp );
       }
 

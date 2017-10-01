@@ -178,12 +178,13 @@ static bool _session_debug(struct le *le, void *arg)
 {
   struct re_printf *pf = arg;
   struct noise_session *ns = le->data;
-  re_hprintf( pf, "→ %W [CH:%p][%s][TX=%zu][RX=%zu]\n"
+  re_hprintf( pf, "→ %W [CH:%p][%s][TX=%zu][RX=%zu][REF:%zu]\n"
             , ns->handshake.remote_static, NOISE_PUBLIC_KEY_LEN
             , ns->channel_lock
             , noise_session_event_tostr(ns->event_last)
             , ns->tx_bytes
             , ns->rx_bytes
+            , mem_nrefs(ns)
             );
 
 
@@ -640,6 +641,12 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
   if (!is_retry)
     ns->tmr_hs_attempts = 0;
 
+  if ( ns->event_last == NOISE_SESSION_EVENT_CONNECTED
+    || ns->event_last > NOISE_SESSION_EVENT_REKEY )
+    return EALREADY;
+
+  csock_flow(&hs->csock, csock);
+
   if (ns->last_sent_handshake + REKEY_TIMEOUT > tmr_jiffies())
     return EALREADY;
 
@@ -648,8 +655,6 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
   out_type = arch_htole32(1);
 
   _handshake_init(ns->ne, hs->chaining_key, hs->hash, hs->remote_static);
-
-  csock_flow(&hs->csock, csock);
 
   /* e */
   randombytes_buf(hs->ephemeral_private, 32);
@@ -1430,6 +1435,11 @@ int noise_session_new( struct noise_session **sessionp
   session = noise_engine_find_session_bykey(ne, channel_lock, public_key);
   if (session) {
     *sessionp = session;
+    noise_debug( "[NOISE:ALREADY] %W [CH:%p][%s]\n"
+               , session->handshake.remote_static, NOISE_PUBLIC_KEY_LEN
+               , session->channel_lock
+               , noise_session_event_tostr(session->event_last)
+               );
     return EALREADY;
   }
 
@@ -1487,6 +1497,7 @@ int noise_session_new( struct noise_session **sessionp
 
 static int noise_engine_data_rx( struct noise_engine *ne
                                , struct noise_session **nsp
+                               , uintptr_t channel_lock
                                , struct mbuf *mb
                                , struct csock *csock)
 {
@@ -1516,6 +1527,11 @@ static int noise_engine_data_rx( struct noise_engine *ne
 
   ns = kp->ns;
   key = &kp->receiving;
+
+  if (ns->channel_lock != channel_lock) {
+    error("[NOISE] CHANNEL CROSS?!\n");
+    return EBADMSG;
+  }
 
   noise_info("noise_engine_data_rx: check counters\n");
   
@@ -1690,7 +1706,7 @@ int noise_engine_recieve( struct noise_engine *ne
       /* @FALLTHROUGH@ */
     case 4: /* data */
       /*error("noise_engine_data_rx BEFORE: [%W]\n", mbuf_buf(mb), mbuf_get_left(mb));*/
-      if (noise_engine_data_rx(ne, &ns, mb, csock)) {
+      if (noise_engine_data_rx(ne, &ns, channel_lock, mb, csock)) {
         err = NOISE_ENGINE_RECIEVE_EBADMSG;
         noise_error( "[NOISE] NOISE_ENGINE_RECIEVE_EBADMSG\n");
       } else {

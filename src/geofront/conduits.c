@@ -34,6 +34,14 @@ struct conduits {
 
 };
 
+static bool _peer_debug_h(struct le *le, void *arg)
+{
+  struct conduit_peer *cp = le->data;
+  (void)arg;
+  warning("→ %H\n", conduit_peer_debug, cp);
+  return false;
+}
+
 int conduits_debug(struct re_printf *pf, const struct conduits *conduits)
 {
   int err = 0;
@@ -101,6 +109,15 @@ static struct csock *_noise_h( struct csock *csock
 
   switch (type) {
     case CSOCK_TYPE_DATA_MB:
+#if 0
+      error( "_noise_h <c:%p><m:%p><p:%p><pc:%p><pcs:%p>\n"
+           , csock
+           , mb
+           , peer
+           , peer->conduit
+           , peer->conduit ? peer->conduit->send_h : NULL
+           );
+#endif
       if (!peer->conduit || !peer->conduit->send_h)
         break;
       peer->conduit->send_h(peer, mb, peer->conduit->send_h_arg);
@@ -146,6 +163,7 @@ static struct csock *_noise_h( struct csock *csock
 
             break;
           default:
+            /* NOISE_SESSION_EVENT_NULL should never be sent */
             error("conduits: _noise_h: unknown type <%d>\n", event->type);
             break;
         }
@@ -170,11 +188,13 @@ int conduit_peer_initiate( struct conduit_peer *peer
                          , bool do_handshake )
 {
   int err = 0;
-  bool ns_already = false;
   struct noise_session *session = NULL;
 
   if (!peer || !public_key)
     return EINVAL;
+
+  /* deprecate? */
+  (void)do_handshake;
 
   err = noise_session_new( &session
                          , everip_noise()
@@ -183,7 +203,6 @@ int conduit_peer_initiate( struct conduit_peer *peer
                          , NULL /* preshared_key */ );
 
   if (err == EALREADY) {
-    ns_already = true;
     err = 0;
   } else if (err) {
     goto out;
@@ -191,13 +210,12 @@ int conduit_peer_initiate( struct conduit_peer *peer
 
   peer->csock.send = _noise_h;
 
-  if (do_handshake && !ns_already) {
-    /* X:TODO perhaps instead of a full step1,
-       we should have a push function */
-    noise_session_hs_step1_pilot( session
-                                , false
-                                , &peer->csock );
-  }
+  /* X:TODO perhaps instead of a full step1,
+     we should have a push function */
+  noise_session_hs_step1_pilot( session
+                              , false
+                              , &peer->csock );
+
 out:
   return err;
 }
@@ -253,7 +271,11 @@ int conduit_incoming( struct conduit *conduit
   struct noise_session *ns = NULL;
   enum NOISE_ENGINE_RECIEVE ne_rx;
 
+  if (!conduit || conduit != cp->conduit)
+    return EINVAL;
+
   debug("conduit_incoming\n");
+
   cp->csock.send = _noise_h;
 
   if (cp->flags & CONDUIT_PEER_FLAG_BCAST) {
@@ -273,12 +295,14 @@ int conduit_incoming( struct conduit *conduit
 
     mbuf_advance(mb, 10);
 
+    /*error("CONDUIT_PEER_FLAG_BCAST [%W]\n", mbuf_buf(mb), NOISE_PUBLIC_KEY_LEN);*/
+
     err = conduit_peer_initiate( cp
                                , mbuf_buf(mb) /* public key */
                                , true /* handshake */
                                );
 
-    return 0;
+    return err;
   } else {
 
     ne_rx = noise_engine_recieve( everip_noise()
@@ -291,6 +315,7 @@ int conduit_incoming( struct conduit *conduit
       goto bad;
     }
     if (ne_rx == NOISE_ENGINE_RECIEVE_DECRYPTED) {
+      cp->ns = ns;
       cdata.cp = cp;
       cdata.mb = mb;
       csock_forward(&conduit->ctx->csock, CSOCK_TYPE_DATA_CONDUIT, &cdata);
@@ -332,15 +357,29 @@ static bool _conduits_conduit_peer_sort_h(struct le *le1, struct le *le2, void *
 
   (void)arg;
 
-  /* check to make sure that we have a valid ns */
-  if ((!cp_1->ns && cp_2->ns) || (!cp_1->csock.adj && cp_2->csock.adj))
+  uint8_t score_1 = 0;
+  uint8_t score_2 = 0;
+
+  if (!cp_1->ns)
+    score_1 = 1;
+
+  if (!cp_1->csock.adj)
+    score_1 = 2;
+
+  if (!cp_2->ns)
+    score_2 = 1;
+
+  if (!cp_2->csock.adj)
+    score_2 = 2;
+
+  if (score_2 < score_1)
     return false;
 
-  if ((cp_1->ns && !cp_2->ns) || (cp_1->csock.adj && !cp_2->csock.adj))
-    return true;
-
-  if (noise_session_score(cp_1->ns) > noise_session_score(cp_2->ns))
+  if ( score_1 == score_2
+    && noise_session_score(cp_1->ns) > noise_session_score(cp_2->ns))
+  {
     return false;
+  }
 
   return true;
 }
@@ -365,6 +404,11 @@ conduits_conduit_peer_search( struct conduits *conduits
   sort_list = hash_list(conduits->hash_cp_addr, _id);
   if (sort_list) {
     list_sort(sort_list, &_conduits_conduit_peer_sort_h, NULL);
+#if 0
+    warning("===========================\n");
+    list_apply(sort_list, true, _peer_debug_h, NULL);
+    warning("===========================\n");
+#endif
   }
 
   cp = list_ledata(hash_lookup( conduits->hash_cp_addr

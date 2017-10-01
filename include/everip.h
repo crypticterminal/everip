@@ -406,20 +406,23 @@ static inline void csock_flow(struct csock *c_a, struct csock *c_b)
  */
 
 enum NOISE_SESSION_EVENT {
-     NOISE_SESSION_EVENT_INIT = 0
-   , NOISE_SESSION_EVENT_CLOSE = 1
-   , NOISE_SESSION_EVENT_ZERO = 2
-   , NOISE_SESSION_EVENT_HSHAKE = 3
-   , NOISE_SESSION_EVENT_HSXMIT = 4
-   , NOISE_SESSION_EVENT_CONNECTED = 5
-   , NOISE_SESSION_EVENT_REKEY = 6
-   , NOISE_SESSION_EVENT_BEGIN_PILOT = 7
-   , NOISE_SESSION_EVENT_BEGIN_COPILOT = 8
+     NOISE_SESSION_EVENT_NULL = 0
+   , NOISE_SESSION_EVENT_INIT = 1
+   , NOISE_SESSION_EVENT_CLOSE = 2
+   , NOISE_SESSION_EVENT_ZERO = 3
+   , NOISE_SESSION_EVENT_HSHAKE = 4
+   , NOISE_SESSION_EVENT_HSXMIT = 5
+   , NOISE_SESSION_EVENT_CONNECTED = 6
+   , NOISE_SESSION_EVENT_REKEY = 7
+   , NOISE_SESSION_EVENT_BEGIN_PILOT = 8
+   , NOISE_SESSION_EVENT_BEGIN_COPILOT = 9
 };
 
 static inline const char * noise_session_event_tostr(enum NOISE_SESSION_EVENT event)
 {
   switch (event) {
+    case NOISE_SESSION_EVENT_NULL:
+      return "NULL";
     case NOISE_SESSION_EVENT_INIT:
       return "INIT";
     case NOISE_SESSION_EVENT_CLOSE:
@@ -637,8 +640,9 @@ static inline int conduit_peer_debug(struct re_printf *pf, struct conduit_peer *
   memset(&nsc, 0, sizeof(nsc));
   err = noise_session_counters(peer->ns, &nsc);
 
-  err  = re_hprintf(pf, "[%j][%s][SCORE=%u][TX=%zu][RX=%zu]"
+  err  = re_hprintf(pf, "[%j][%p][%s][SCORE=%u][TX=%zu][RX=%zu]"
                       , &laddr
+                      , peer->ns
                       , noise_session_event_tostr(peer->ns_last_event)
                       , noise_session_score(peer->ns)
                       , nsc.tx_bytes
