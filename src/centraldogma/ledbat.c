@@ -225,7 +225,7 @@ static int _ledbat_sock_write(struct ledbat_sock *lsock)
       ++lsock->iovec_pos;
       lsock->iovec_pos = lsock->iovec_pos % LEDBAT_BUF_LIMIT;
       lsock->iovec_count--;
-      lsock->bufs[i] = mem_deref(mb);
+      lsock->bufs[i % LEDBAT_BUF_LIMIT] = mem_deref(mb);
       continue;
     } else { /* full? */
       break;
