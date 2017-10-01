@@ -20,6 +20,8 @@
 
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <linux/wireless.h>
+#include <sys/ioctl.h>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -188,11 +190,30 @@ int netevents_platform_getkind( const char* ifname
   int err = 0;
   enum NETEVENTS_IFACE_KIND kind = NETEVENTS_IFACE_KIND_UNKNOWN;
 
-  if (_iswireless(ifname)) {
-    kind = NETEVENTS_IFACE_KIND_WIRELESS;
+  err = re_regex(ifname, strlen(ifname), "lo[a-z0-9]+", NULL);
+  if (!err) {
+    kind = NETEVENTS_IFACE_KIND_LOOPBACK;
+    goto out;
   }
 
-  *kindp = kind;
+  err = re_regex(ifname, strlen(ifname), "tun[a-z0-9]+", NULL);
+  if (!err) {
+    kind = NETEVENTS_IFACE_KIND_IPTUNNEL;
+    goto out;
+  }
 
+  if (_iswireless(ifname)) {
+    kind = NETEVENTS_IFACE_KIND_WIRELESS;
+    goto out;
+  }
+
+  err = re_regex(ifname, strlen(ifname), "eth[a-z0-9]+", NULL);
+  if (!err) {
+    kind = NETEVENTS_IFACE_KIND_ETHERNET;
+    goto out;
+  }
+
+out:
+  *kindp = kind;
   return err;
 }
