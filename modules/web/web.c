@@ -105,11 +105,19 @@ static bool _wsc_debug(struct le *le, void *arg)
 {
   struct re_printf *pf = arg;
   struct ws_client *wsc = le->data;
-  re_hprintf( pf, "→ %J [%u][wsr:%u]\n"
+  re_hprintf( pf, "→ [SOCK] %J [%u][wsr:%u]\n"
             , http_client_bound(wsc->http)
             , wsc->last_jiffy
             , mem_nrefs(wsc->wc)
             );
+  return false;
+}
+
+static bool _peer_debug(struct le *le, void *arg)
+{
+  struct re_printf *pf = arg;
+  struct wsc_peer *wp = le->data;
+  re_hprintf(pf, "→ [PEER] %H\n", conduit_peer_debug, &wp->cp);
   return false;
 }
 
@@ -119,6 +127,7 @@ static int _conduit_debug(struct re_printf *pf, void *arg)
   struct this_module *mod = arg;
 
   list_apply(&mod->ws_clients, true, _wsc_debug, pf);
+  hash_apply(mod->peers, _peer_debug, pf);
 
   return err;
 }
@@ -372,7 +381,6 @@ static void wsc_handler_recv( const struct websock_hdr *hdr
 
 
       err_proto = conduit_peer_initiate( &wp->cp
-                                       , wsc->ctx->conduit
                                        , in_pubkey
                                        , true );
 

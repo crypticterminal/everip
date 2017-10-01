@@ -23,7 +23,19 @@
 #include <gendo.h>
 #endif
 
+#if 1
 #define noise_info(...)
+#define noise_debug(...)
+#define noise_error(...)
+#define handshake_error(...)
+#define handshake_debug(...)
+#else
+#define noise_info error
+#define noise_debug error
+#define noise_error error
+#define handshake_error error
+#define handshake_debug error
+#endif
 
 static const uint8_t g_hshake[37] = "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s";
 static const uint8_t g_ident[100] = "ConnectFree(R) EVER/IP(R) V1 (c) kristopher tate and ConnectFree Corporation -- All Rights Reserved.";
@@ -81,6 +93,7 @@ struct noise_keypair {
   uint32_t remote_index;
   bool its_my_plane;
   
+  uint64_t rx_bytes, tx_bytes;
   struct csock csock;
 };
 
@@ -161,6 +174,40 @@ enum NOISE_TIMER_ON {
 
 #define NOISE_ENCRYPTED_LEN(plain_len) (plain_len + NOISE_AUTHTAG_LEN)
 
+static bool _session_debug(struct le *le, void *arg)
+{
+  struct re_printf *pf = arg;
+  struct noise_session *ns = le->data;
+  re_hprintf( pf, "→ %W [CH:%p][%s][TX=%zu][RX=%zu]\n"
+            , ns->handshake.remote_static, NOISE_PUBLIC_KEY_LEN
+            , ns->channel_lock
+            , noise_session_event_tostr(ns->event_last)
+            , ns->tx_bytes
+            , ns->rx_bytes
+            );
+
+
+  if (ns->keypair_now) {
+    re_hprintf( pf, "\t{KEY:NOW} [TX=%zu][RX=%zu]\n"
+              , ns->keypair_now->tx_bytes
+              , ns->keypair_now->rx_bytes
+              );
+  }
+  if (ns->keypair_then) {
+    re_hprintf( pf, "\t{KEY:THEN} [TX=%zu][RX=%zu]\n"
+              , ns->keypair_then->tx_bytes
+              , ns->keypair_then->rx_bytes
+              );
+  }
+  if (ns->keypair_next) {
+    re_hprintf( pf, "\t{KEY:NEXT} [TX=%zu][RX=%zu]\n"
+              , ns->keypair_next->tx_bytes
+              , ns->keypair_next->rx_bytes
+              );
+  }
+
+  return false;
+}
 
 int noise_engine_debug(struct re_printf *pf, void *arg)
 {
@@ -179,6 +226,9 @@ int noise_engine_debug(struct re_printf *pf, void *arg)
   err  = re_hprintf( pf, "→ %W\n", ne->si.public, NOISE_PUBLIC_KEY_LEN);
   err  = re_hprintf( pf, "■ Authenticated EVER/IP Addresses\n");
   err  = re_hprintf( pf, "→ %j\n", &laddr);
+  err  = re_hprintf( pf, "■ Sessions\n");
+
+  list_apply(&ne->sessions_all, true, _session_debug, pf);
 
   err |= re_hprintf(pf, "\n[END]\n");
 
@@ -214,10 +264,17 @@ static void noise_session_event_run( struct noise_session *ns
     case NOISE_SESSION_EVENT_BEGIN_COPILOT:
       ns->sent_lastminute_handshake = false;
       noise_session_tmr_control(ns, NOISE_TIMER_ON_HAND_DONE);
+      noise_session_keepalive_send(ns); /* x:test 2017.10.1 */
       break;
     default:
       break;
   }
+
+  warning( "[NOISE] %W [CH:%p][%s]\n"
+         , ns->handshake.remote_static, NOISE_PUBLIC_KEY_LEN
+         , ns->channel_lock
+         , noise_session_event_tostr(type)
+         );
 
   ns->event_last = type;
 
@@ -516,7 +573,7 @@ int rfc6479_counter_ok( union rfc6479_counter *counter
   bitloc = (their_counter & (UNSIGNED_LONG_BITS - 1));
 
   if (counter->receive.backtrack[index] & (1<<bitloc)) {
-    /*error( "BAD: [%W]\n", counter->receive.backtrack, 256);*/
+    noise_error( "BAD: [%W]\n", counter->receive.backtrack, 256);
     return EBADMSG; /* already received */
   } else {
     /*noise_info( "MOK: [%W]\n", counter->receive.backtrack, 256);*/
@@ -538,6 +595,18 @@ uint64_t noise_session_score(struct noise_session *ns)
     return UINT64_MAX - ns->event_last;
 
   return ns->keepalive_diff;
+}
+
+int noise_session_counters( struct noise_session *ns
+                          , struct noise_session_counters *counters )
+{
+  if (!ns || !counters)
+    return EINVAL;
+
+  counters->rx_bytes = ns->rx_bytes;
+  counters->tx_bytes = ns->tx_bytes;
+
+  return 0;
 }
 
 /* session send */
@@ -568,8 +637,6 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
   if (!hs->static_identity->has_identity)
     goto out;
 
-  csock_flow(&hs->csock, csock);
-
   if (!is_retry)
     ns->tmr_hs_attempts = 0;
 
@@ -581,6 +648,8 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
   out_type = arch_htole32(1);
 
   _handshake_init(ns->ne, hs->chaining_key, hs->hash, hs->remote_static);
+
+  csock_flow(&hs->csock, csock);
 
   /* e */
   randombytes_buf(hs->ephemeral_private, 32);
@@ -722,7 +791,7 @@ noise_session_hs_step2_copilot( struct noise_engine *ne
   if (!_message_decrypt(s, in_encrypted_static, sizeof(in_encrypted_static), key, hash))
     goto out;
 
-  debug("INCOMING: %W\n", s, NOISE_PUBLIC_KEY_LEN);
+  handshake_debug("INCOMING: %W\n", s, NOISE_PUBLIC_KEY_LEN);
 
   ns = noise_engine_find_session_bykey(ne, channel_lock, s);
   if (!ns) {
@@ -1049,6 +1118,7 @@ static int _noise_session_send( struct noise_session *ns
   uint64_t *nonce_64 = (uint64_t *)(void *)&nonce[NOICE_NONCE_LEN - sizeof(uint64_t)];
   struct noise_symmetric_key *key;
   size_t mb_pos;
+  size_t mlen;
 
   if (!ns || !mb)
     return EINVAL;
@@ -1076,18 +1146,21 @@ static int _noise_session_send( struct noise_session *ns
   *nonce_64 = arch_htole64( *nonce_64 );
 
   /* kickback mb */
-  mbuf_advance(mb, (ssize_t)-(16 + NOISE_AUTHTAG_LEN));
+  mbuf_advance(mb, (ssize_t)(-(16 + NOISE_AUTHTAG_LEN)));
   mb_pos = mb->pos;
 
   mbuf_write_u32(mb, arch_htole32( message_type ));
   mbuf_write_u32(mb, arch_htole32( ns->keypair_now->remote_index ));
   mbuf_write_u64(mb, *nonce_64);
 
+  /* we use this for tx counter later */
+  mlen = mbuf_get_left(mb) - NOISE_AUTHTAG_LEN;
+
   crypto_aead_chacha20poly1305_ietf_encrypt_detached( mbuf_buf(mb) + NOISE_AUTHTAG_LEN
                                                     , mbuf_buf(mb)
                                                     , NULL
                                                     , mbuf_buf(mb) + NOISE_AUTHTAG_LEN
-                                                    , mbuf_get_left(mb) - NOISE_AUTHTAG_LEN
+                                                    , mlen
                                                     , NULL
                                                     , 0
                                                     , NULL
@@ -1110,6 +1183,9 @@ static int _noise_session_send( struct noise_session *ns
 
   csock_forward(&ns->keypair_now->csock, CSOCK_TYPE_DATA_MB, mb);
 
+  ns->tx_bytes += mlen;
+  ns->keypair_now->tx_bytes += mlen;
+
   return 0;
 }
 
@@ -1124,7 +1200,7 @@ int noise_session_send( struct noise_session *ns
 static void noise_session_tmr_zero(void *arg)
 {
   struct noise_session *ns = arg;
-  debug("TMR noise_session_tmr_zero\n");
+  noise_debug("TMR noise_session_tmr_zero\n");
 
   noise_session_event_run(ns, NOISE_SESSION_EVENT_ZERO);
 
@@ -1141,7 +1217,7 @@ static void noise_session_tmr_zero(void *arg)
 static void noise_session_tmr_hs_new(void *arg)
 {
   struct noise_session *ns = arg;
-  debug("TMR noise_session_tmr_hs_new\n");
+  noise_debug("TMR noise_session_tmr_hs_new\n");
   noise_session_event_run(ns, NOISE_SESSION_EVENT_HSHAKE);
 
   noise_session_hs_step1_pilot(ns, false, ns->keypair_now->csock.adj);
@@ -1151,7 +1227,7 @@ static void noise_session_tmr_hs_new(void *arg)
 static void noise_session_tmr_hs_rexmit(void *arg)
 {
   struct noise_session *ns = arg;
-  debug("TMR noise_session_tmr_hs_rexmit\n");
+  noise_debug("TMR noise_session_tmr_hs_rexmit\n");
   noise_session_event_run(ns, NOISE_SESSION_EVENT_HSXMIT);
 
   if (ns->tmr_hs_attempts > MAX_TIMER_HANDSHAKES) {
@@ -1173,7 +1249,7 @@ static void noise_session_tmr_hs_rexmit(void *arg)
 static void noise_session_tmr_keepalive(void *arg)
 {
   struct noise_session *ns = arg;
-  debug("TMR noise_session_tmr_keepalive\n");
+  noise_debug("TMR noise_session_tmr_keepalive\n");
 
   noise_session_keepalive_send(ns);
 
@@ -1182,7 +1258,7 @@ static void noise_session_tmr_keepalive(void *arg)
 static void noise_session_tmr_persist(void *arg)
 {
   struct noise_session *ns = arg;
-  debug("TMR noise_session_tmr_persist\n");
+  noise_debug("TMR noise_session_tmr_persist\n");
   if (ns->persistent_keepalive_interval)
     error("SEND KEEP ALIVE\n");
 }
@@ -1506,6 +1582,9 @@ static int noise_engine_data_rx( struct noise_engine *ne
   noise_session_tmr_control(ns, NOISE_TIMER_ON_POLY_RX);
   noise_session_tmr_control(ns, NOISE_TIMER_ON_POLY_TXRX);
 
+  ns->rx_bytes += mbuf_get_left(mb);
+  kp->rx_bytes += mbuf_get_left(mb);
+
   *nsp = ns;
 
   return 0;
@@ -1559,13 +1638,13 @@ int noise_engine_recieve( struct noise_engine *ne
 
   type = arch_letoh32( mbuf_read_u32(mb) );
 
-  debug("noise_engine_recieve <%p> [%u][%u][%W]\n", ne, type, mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));
+  noise_debug("noise_engine_recieve <%p> [%u][%u][%W]\n", ne, type, mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));
 
   switch (type) {
     case 1:
       ns = noise_session_hs_step2_copilot(ne, channel_lock, mb);
       if (!ns) {
-        debug("noise_engine_recieve(s2): DROP invalid handshake\n");
+        handshake_debug("noise_engine_recieve(s2): DROP invalid handshake\n");
         err = NOISE_ENGINE_RECIEVE_EBADMSG;
         goto out;
       }
@@ -1581,17 +1660,17 @@ int noise_engine_recieve( struct noise_engine *ne
           csock_flow(&ns->keypair_next->csock, csock);
           csock_forward(&ns->keypair_next->csock, CSOCK_TYPE_DATA_MB, mb_reply);
         } else {
-          error("noise_session_hs_begin\n");
+          handshake_error("noise_session_hs_begin\n");
         }
       } else {
-        error("noise_session_hs_reply\n");
+        handshake_error("noise_session_hs_reply\n");
       }
       break;
     
     case 2:
       ns = noise_session_hs_step4_pilot(ne, mb);
       if (!ns) {
-        debug("noise_engine_recieve(s4): DROP invalid handshake\n");
+        handshake_debug("noise_engine_recieve(s4): DROP invalid handshake\n");
         err = NOISE_ENGINE_RECIEVE_EBADMSG;
         goto out;
       }
@@ -1601,10 +1680,11 @@ int noise_engine_recieve( struct noise_engine *ne
         noise_session_tmr_control(ns, NOISE_TIMER_ON_EKEY);
         noise_session_event_run(ns, NOISE_SESSION_EVENT_BEGIN_PILOT);
       } else {
-        error("noise_session_hs_begin\n");
+        handshake_error("noise_session_hs_begin\n");
       }
       break;
     case 5: /* keepalive ping */
+      /* @FALLTHROUGH@ */
     case 6: /* keepalive ping */
       keepalive_pingpong = true;
       /* @FALLTHROUGH@ */
@@ -1612,6 +1692,7 @@ int noise_engine_recieve( struct noise_engine *ne
       /*error("noise_engine_data_rx BEFORE: [%W]\n", mbuf_buf(mb), mbuf_get_left(mb));*/
       if (noise_engine_data_rx(ne, &ns, mb, csock)) {
         err = NOISE_ENGINE_RECIEVE_EBADMSG;
+        noise_error( "[NOISE] NOISE_ENGINE_RECIEVE_EBADMSG\n");
       } else {
         err = NOISE_ENGINE_RECIEVE_DECRYPTED;
       }

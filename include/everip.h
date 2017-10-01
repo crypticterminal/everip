@@ -479,10 +479,17 @@ struct noise_event {
   enum NOISE_SESSION_EVENT type;
 };
 
+struct noise_session_counters {
+  uint64_t rx_bytes;
+  uint64_t tx_bytes;
+};
+
 void noise_si_private_key_set( struct noise_si *si
                              , const uint8_t private_key[NOISE_PUBLIC_KEY_LEN] );
 
 uint64_t noise_session_score(struct noise_session *ns);
+
+int noise_session_counters(struct noise_session *ns, struct noise_session_counters *counters);
 
 int noise_session_keepalive_send(struct noise_session *ns);
 int noise_session_keepalive_recv(struct noise_session *ns, struct mbuf *mb);
@@ -623,11 +630,20 @@ static inline int conduit_peer_debug(struct re_printf *pf, struct conduit_peer *
 {
   int err = 0;
   struct sa laddr;
+  struct noise_session_counters nsc;
+
   sa_set_in6(&laddr, peer->everip_addr, 0);
-  err  = re_hprintf(pf, "[%j][%s][SCORE=%u]"
+
+  memset(&nsc, 0, sizeof(nsc));
+  err = noise_session_counters(peer->ns, &nsc);
+
+  err  = re_hprintf(pf, "[%j][%s][SCORE=%u][TX=%zu][RX=%zu]"
                       , &laddr
                       , noise_session_event_tostr(peer->ns_last_event)
-                      , noise_session_score(peer->ns));
+                      , noise_session_score(peer->ns)
+                      , nsc.tx_bytes
+                      , nsc.rx_bytes
+                      );
   return err;
 }
 
@@ -642,7 +658,6 @@ int conduit_peer_encrypted_send( struct conduit_peer *cp
                                , struct mbuf *mb );
 
 int conduit_peer_initiate( struct conduit_peer *peer
-                         , struct conduit *conduit
                          , const uint8_t public_key[NOISE_PUBLIC_KEY_LEN]
                          , bool do_handshake );
 

@@ -166,33 +166,39 @@ int conduit_peer_encrypted_send( struct conduit_peer *cp
 }
 
 int conduit_peer_initiate( struct conduit_peer *peer
-                         , struct conduit *conduit
                          , const uint8_t public_key[NOISE_PUBLIC_KEY_LEN]
                          , bool do_handshake )
 {
   int err = 0;
+  bool ns_already = false;
   struct noise_session *session = NULL;
 
-  if (!peer || !conduit || !public_key)
+  if (!peer || !public_key)
     return EINVAL;
 
   err = noise_session_new( &session
                          , everip_noise()
-                         , (uintptr_t)conduit
+                         , (uintptr_t)peer->conduit
                          , public_key
                          , NULL /* preshared_key */ );
-  if (err == EALREADY)
-    err = 0;
 
-  if (err)
-    return err;
+  if (err == EALREADY) {
+    ns_already = true;
+    err = 0;
+  } else if (err) {
+    goto out;
+  }
 
   peer->csock.send = _noise_h;
 
-  if (do_handshake)
+  if (do_handshake && !ns_already) {
+    /* X:TODO perhaps instead of a full step1,
+       we should have a push function */
     noise_session_hs_step1_pilot( session
                                 , false
                                 , &peer->csock );
+  }
+out:
   return err;
 }
 
@@ -228,11 +234,10 @@ int conduit_peer_create( struct conduit_peer **peerp
 
   err = conduit->peer_create_h(peerp, key, host, conduit->peer_create_h_arg);
 
-  if (err || !peerp || !*peerp)
+  if (err || !peerp || !*peerp || (*peerp)->conduit != conduit)
     return err ? err : EINVAL;
 
   err = conduit_peer_initiate( *peerp
-                             , conduit
                              , public_key
                              , do_handshake );
 
@@ -268,18 +273,10 @@ int conduit_incoming( struct conduit *conduit
 
     mbuf_advance(mb, 10);
 
-    err = noise_session_new( &ns
-                           , everip_noise()
-                           , (uintptr_t)conduit
-                           , mbuf_buf(mb)
-                           , NULL /* preshared_key */);
-
-    if (err && err != EALREADY)
-      goto bad;
-
-    err = noise_session_hs_step1_pilot(ns, false, &cp->csock);
-    if (err && err != EALREADY)
-      goto bad;
+    err = conduit_peer_initiate( cp
+                               , mbuf_buf(mb) /* public key */
+                               , true /* handshake */
+                               );
 
     return 0;
   } else {
@@ -328,12 +325,33 @@ static bool _conduits_conduit_peer_lookup(struct le *le, void *arg)
   return 0 == memcmp(cp->everip_addr, (uint8_t *)arg, EVERIP_ADDRESS_LENGTH);
 }
 
+static bool _conduits_conduit_peer_sort_h(struct le *le1, struct le *le2, void *arg)
+{
+  struct conduit_peer *cp_1 = le1->data;
+  struct conduit_peer *cp_2 = le2->data;
+
+  (void)arg;
+
+  /* check to make sure that we have a valid ns */
+  if ((!cp_1->ns && cp_2->ns) || (!cp_1->csock.adj && cp_2->csock.adj))
+    return false;
+
+  if ((cp_1->ns && !cp_2->ns) || (cp_1->csock.adj && !cp_2->csock.adj))
+    return true;
+
+  if (noise_session_score(cp_1->ns) > noise_session_score(cp_2->ns))
+    return false;
+
+  return true;
+}
+
 struct conduit_peer *
 conduits_conduit_peer_search( struct conduits *conduits
                             , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] )
 {
   uint32_t _id;
   struct le *le;
+  struct list *sort_list = NULL;
   struct conduit *c;
   struct conduit_peer *cp = NULL;
 
@@ -343,6 +361,12 @@ conduits_conduit_peer_search( struct conduits *conduits
   /*error("conduits_conduit_peer_search %W\n", everip_addr, EVERIP_ADDRESS_LENGTH);*/
 
   _id = *(uint8_t *)everip_addr;
+
+  sort_list = hash_list(conduits->hash_cp_addr, _id);
+  if (sort_list) {
+    list_sort(sort_list, &_conduits_conduit_peer_sort_h, NULL);
+  }
+
   cp = list_ledata(hash_lookup( conduits->hash_cp_addr
                               , _id
                               , _conduits_conduit_peer_lookup

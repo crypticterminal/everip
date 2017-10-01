@@ -1603,7 +1603,6 @@ static int _conduit_search( const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
 
     /* initiate peer */
     conduit_peer_initiate( &peer->cp
-                         , tol_c->conduit
                          , dhti->public_key
                          , true );
     return 0;
