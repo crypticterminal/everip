@@ -96,12 +96,12 @@ static struct csock *_noise_h( struct csock *csock
 
   debug("_noise_h <%p><%p><%p>\n", csock, mb, peer);
 
-  if (!peer || !peer->conduit)
+  if (!peer)
     return NULL;
 
   switch (type) {
     case CSOCK_TYPE_DATA_MB:
-      if (!peer->conduit->send_h)
+      if (!peer->conduit || !peer->conduit->send_h)
         break;
       peer->conduit->send_h(peer, mb, peer->conduit->send_h_arg);
       break;

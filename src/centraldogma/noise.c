@@ -228,6 +228,16 @@ static void noise_session_event_run( struct noise_session *ns
   if (ns->keypair_now) {
     csock_forward(&ns->keypair_now->csock, CSOCK_TYPE_NOISE_EVENT, &event);
   }
+
+  if (type < NOISE_SESSION_EVENT_CONNECTED) {
+    if (ns->keypair_then) {
+      csock_forward(&ns->keypair_then->csock, CSOCK_TYPE_NOISE_EVENT, &event);
+    }
+
+    if (ns->keypair_next) {
+      csock_forward(&ns->keypair_next->csock, CSOCK_TYPE_NOISE_EVENT, &event);
+    }
+  }
   
   magi_eventdriver_handler_run( ns->ne->ed
                               , MAGI_EVENTDRIVER_WATCH_NOISE
