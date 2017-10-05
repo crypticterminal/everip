@@ -49,11 +49,6 @@ SPLINT_OPTIONS += -I$(LIBSODIUM_PATH)/include
 CLANG_OPTIONS  += -I$(LIBSODIUM_PATH)/include
 endif
 
-ifneq ($(LIBSODIUM_PATH),)
-SPLINT_OPTIONS += -I$(LIBSODIUM_PATH)/include
-CLANG_OPTIONS  += -I$(LIBSODIUM_PATH)/include
-endif
-
 # static is good
 STATIC    := yes
 
