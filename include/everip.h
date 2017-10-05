@@ -48,12 +48,6 @@ static inline bool everip_version_compat(uint32_t a, uint32_t b) {
 
 ASSERT_COMPILETIME(TAI64_N_LEN == (sizeof(uint64_t) + sizeof(uint32_t)));
 
-#define container_of(p, t, m) \
-    (__extension__ ({ \
-        const __typeof__(((t*)0)->m)*__mp = (p); \
-        (__mp ? (t*)((void*)(char*)__mp - offsetof(t, m)) : NULL); \
-    }))
-
 struct noise_engine;
 struct noise_session;
 

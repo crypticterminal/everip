@@ -128,6 +128,13 @@ static inline uint64_t reverse_b64(uint64_t i)
     (void) (&_max1 == &_max2);      \
     _max1 > _max2 ? _max1 : _max2; }))
 
+#define container_of(p, t, m) \
+    (__extension__ ({ \
+        const __typeof__(((t*)0)->m)*__mp = (p); \
+        (__mp ? (t*)((void*)(char*)__mp - offsetof(t, m)) : NULL); \
+    }))
+
+
 static inline uint32_t chksum_one( const uint8_t *buf
                                  , uint16_t len
                                  , uint32_t s )
