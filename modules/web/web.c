@@ -222,7 +222,7 @@ static int wsc_send_register( struct ws_client *wsc )
   cryptosign_pk_fromskpk(public_sign_key, ne->sign_keys);
 
   /* header = 114U */
-  /*[SWITCH/TYPE 16U][SIGNATURE 64U][PUBLIC_KEY 32U][TAI64N 12U][OPTIONS 4U]*/
+  /*[SWITCH/TYPE 2U][SIGNATURE 64U][PUBLIC_KEY 32U][TAI64N 12U][OPTIONS 4U]*/
   mbuf_set_pos(mb, 0);
 
   /* switch/type */
@@ -569,10 +569,17 @@ static int wsc_alloc( struct ws_client **wscp
     goto out;
 
   /* create url that includes our everip address */
+#if 1
   (void)re_snprintf( wsc->uri
                    , sizeof(wsc->uri)
                    , "http://ws." WEBSOCKET_V ".ever.network/" WEBSOCKET_V "/dock/%w"
                    , everip_addr, EVERIP_ADDRESS_LENGTH);
+#else
+  (void)re_snprintf( wsc->uri
+                   , sizeof(wsc->uri)
+                   , "http://127.0.0.1:3000/" WEBSOCKET_V "/dock/%w"
+                   , everip_addr, EVERIP_ADDRESS_LENGTH);
+#endif
 
 
   tmr_init(&wsc->tmr_kick);
