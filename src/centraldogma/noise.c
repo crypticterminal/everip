@@ -1707,8 +1707,8 @@ int noise_engine_recieve( struct noise_engine *ne
     case 4: /* data */
       /*error("noise_engine_data_rx BEFORE: [%W]\n", mbuf_buf(mb), mbuf_get_left(mb));*/
       if (noise_engine_data_rx(ne, &ns, channel_lock, mb, csock)) {
-        err = NOISE_ENGINE_RECIEVE_EBADMSG;
-        noise_error( "[NOISE] NOISE_ENGINE_RECIEVE_EBADMSG\n");
+        err = NOISE_ENGINE_RECIEVE_IGNORE;
+        noise_error( "[NOISE] noise_engine_data_rx ignore\n");
       } else {
         err = NOISE_ENGINE_RECIEVE_DECRYPTED;
       }
