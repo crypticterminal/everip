@@ -34,6 +34,9 @@ endif
 GIT_VERSION = $(shell git describe --dirty --abbrev=20 --always)
 CFLAGS    += -DGITVERSION="\"$(GIT_VERSION)\""
 
+COMPILE_DATETIME = $(shell date)
+CFLAGS    += -DCOMPILE_DATETIME="\"$(COMPILE_DATETIME)\""
+
 CFLAGS    += -I. -Iinclude -I$(LIBRE_INC) -I$(SYSROOT)/include
 CFLAGS    += -I$(LIBSODIUM_PATH)/include
 

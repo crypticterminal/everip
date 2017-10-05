@@ -158,6 +158,10 @@ int main(int argc, char *argv[])
   (void)re_fprintf(stderr, "GIT Version: " GITVERSION "\n");
 #endif
 
+#if defined(COMPILE_DATETIME)
+  (void)re_fprintf(stderr, "Compiled on: " COMPILE_DATETIME "\n");
+#endif
+
   (void)re_fprintf(stderr, "\n");
 
   err = everip_init( secret_key, port_default );
