@@ -31,7 +31,7 @@ ifndef LIBUTP_SO
 LIBUTP_SO	:= $(shell [ -f $(LIBUTP_PATH)/libutp.a ] && echo "$(LIBUTP_PATH)")
 endif
 
-GIT_VERSION = $(shell git describe --dirty --abbrev=20 --always)
+GIT_VERSION = $(shell git rev-parse --abbrev-ref HEAD)-$(shell git describe --dirty --abbrev=20 --always)
 CFLAGS    += -DGITVERSION="\"$(GIT_VERSION)\""
 
 COMPILE_DATETIME = $(shell date)
