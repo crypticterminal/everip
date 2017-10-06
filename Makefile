@@ -169,7 +169,7 @@ CFLAGS    += -I$(USEGENDO)include
 CFLAGS += -DHAVE_GENDO
 endif
 
-LIB_OBJS += $(LIBSODIUM_PATH)/lib/libsodium.a
+#LIB_OBJS += $(LIBSODIUM_PATH)/lib/libsodium.a
 
 LIBS_PRE += $(LIBUTP_SO)/libutp.a
 

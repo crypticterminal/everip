@@ -14,7 +14,9 @@ SRCS	+= magi/eventdriver.c
 
 #terminal dogma
 ifeq ($(OS),darwin)
+ifneq ($(SUBOS),ios)
 SRCS	+= terminaldogma/tun_darwin.c
+endif
 endif
 ifeq ($(OS),win32)
 SRCS	+= terminaldogma/tun_win32.c
@@ -45,7 +47,9 @@ SRCS	+= ritsuko/bencode_dec_od.c
 
 
 ifeq ($(OS),darwin)
+ifneq ($(SUBOS),ios)
 SRCS	+= ritsuko/net_darwin.c
+endif
 endif
 ifeq ($(OS),win32)
 SRCS	+= ritsuko/net_win32.c
