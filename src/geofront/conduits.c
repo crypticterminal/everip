@@ -93,22 +93,22 @@ struct conduit *conduit_find_byname( const struct conduits *conduits
   return NULL;
 }
 
-static struct csock *_noise_h( struct csock *csock
-                             , enum CSOCK_TYPE type
-                             , void *data )
+static int _noise_h( struct lsock *lsock
+                   , enum SOCK_TYPE type
+                   , void *data )
 {
   uint32_t _id;
-  struct conduit_peer *peer = container_of(csock, struct conduit_peer, csock);
+  struct conduit_peer *peer = container_of(lsock, struct conduit_peer, lsock);
   struct mbuf *mb = data;
   struct noise_event *event = data;
 
-  debug("_noise_h <%p><%p><%p>\n", csock, mb, peer);
+  debug("_noise_h <%p><%p><%p>\n", lsock, mb, peer);
 
   if (!peer)
-    return NULL;
+    return EINVAL;
 
   switch (type) {
-    case CSOCK_TYPE_DATA_MB:
+    case SOCK_TYPE_DATA_MB:
 #if 0
       error( "_noise_h <c:%p><m:%p><p:%p><pc:%p><pcs:%p>\n"
            , csock
@@ -122,7 +122,7 @@ static struct csock *_noise_h( struct csock *csock
         break;
       peer->conduit->send_h(peer, mb, peer->conduit->send_h_arg);
       break;
-    case CSOCK_TYPE_NOISE_EVENT:
+    case SOCK_TYPE_NOISE_EVENT:
       {
         uint8_t public_key[NOISE_PUBLIC_KEY_LEN];
 
@@ -132,7 +132,6 @@ static struct csock *_noise_h( struct csock *csock
           case NOISE_SESSION_EVENT_INIT:
             break;
           case NOISE_SESSION_EVENT_CLOSE:
-            peer->ns = NULL;
             break;
           case NOISE_SESSION_EVENT_ZERO:
             break;
@@ -146,7 +145,6 @@ static struct csock *_noise_h( struct csock *csock
             break;
           case NOISE_SESSION_EVENT_BEGIN_PILOT:
           case NOISE_SESSION_EVENT_BEGIN_COPILOT:
-            peer->ns = event->ns;
             if (noise_session_publickey_copy(event->ns, public_key))
               goto out;
 
@@ -169,18 +167,25 @@ static struct csock *_noise_h( struct csock *csock
         }
       }
     default:
-      return NULL;
+      return 0;
   }
 out:
-  return NULL;
+  return 0;
 }
 
 int conduit_peer_encrypted_send( struct conduit_peer *cp
                                , struct mbuf *mb )
 {
+  struct noise_session *ns = NULL;
+
   if (!cp || !mb)
     return EINVAL;
-  return noise_session_send(cp->ns, mb);
+
+  ns = list_ledata(cp->lsock.l.head);
+  if (!ns)
+    return EINVAL;
+
+  return noise_session_send(ns, mb);
 }
 
 int conduit_peer_initiate( struct conduit_peer *peer
@@ -208,13 +213,13 @@ int conduit_peer_initiate( struct conduit_peer *peer
     goto out;
   }
 
-  peer->csock.send = _noise_h;
+  peer->lsock.s = _noise_h;
 
   /* X:TODO perhaps instead of a full step1,
      we should have a push function */
   noise_session_hs_step1_pilot( session
                               , false
-                              , &peer->csock );
+                              , &peer->lsock );
 
 out:
   return err;
@@ -276,7 +281,7 @@ int conduit_incoming( struct conduit *conduit
 
   debug("conduit_incoming\n");
 
-  cp->csock.send = _noise_h;
+  cp->lsock.s = _noise_h;
 
   if (cp->flags & CONDUIT_PEER_FLAG_BCAST) {
     cp->flags &= ~CONDUIT_PEER_FLAG_BCAST;
@@ -309,16 +314,15 @@ int conduit_incoming( struct conduit *conduit
                                 , &ns
                                 , (uintptr_t)conduit
                                 , mb
-                                , &cp->csock );
+                                , &cp->lsock );
 
     if (ne_rx < 0) {
       goto bad;
     }
     if (ne_rx == NOISE_ENGINE_RECIEVE_DECRYPTED) {
-      cp->ns = ns;
       cdata.cp = cp;
       cdata.mb = mb;
-      csock_forward(&conduit->ctx->csock, CSOCK_TYPE_DATA_CONDUIT, &cdata);
+      csock_forward(&conduit->ctx->csock, SOCK_TYPE_DATA_CONDUIT, &cdata);
     }
     return 0;
   }
@@ -328,11 +332,11 @@ bad:
 }
 
 static struct csock *_from_outside( struct csock *csock
-                                          , enum CSOCK_TYPE type
+                                          , enum SOCK_TYPE type
                                           , void *data )
 {
   struct conduit_data *cdata = data;
-  if (!csock || type != CSOCK_TYPE_DATA_CONDUIT || !cdata)
+  if (!csock || type != SOCK_TYPE_DATA_CONDUIT || !cdata)
     return NULL;
 
   debug("_from_outside (same as conduit_peer_encrypted_send)\n");
@@ -352,31 +356,28 @@ static bool _conduits_conduit_peer_lookup(struct le *le, void *arg)
 
 static bool _conduits_conduit_peer_sort_h(struct le *le1, struct le *le2, void *arg)
 {
+  uint8_t score_1 = 0;
+  uint8_t score_2 = 0;
+  struct noise_session *ns_1 = NULL;
+  struct noise_session *ns_2 = NULL;
   struct conduit_peer *cp_1 = le1->data;
   struct conduit_peer *cp_2 = le2->data;
 
   (void)arg;
 
-  uint8_t score_1 = 0;
-  uint8_t score_2 = 0;
-
-  if (!cp_1->ns)
+  ns_1 = list_ledata(cp_1->lsock.l.head);
+  if (!ns_1)
     score_1 = 1;
 
-  if (!cp_1->csock.adj)
-    score_1 = 2;
-
-  if (!cp_2->ns)
+  ns_2 = list_ledata(cp_2->lsock.l.head);
+  if (!ns_2)
     score_2 = 1;
-
-  if (!cp_2->csock.adj)
-    score_2 = 2;
 
   if (score_2 < score_1)
     return false;
 
   if ( score_1 == score_2
-    && noise_session_score(cp_1->ns) > noise_session_score(cp_2->ns))
+    && noise_session_score(ns_1) > noise_session_score(ns_2))
   {
     return false;
   }

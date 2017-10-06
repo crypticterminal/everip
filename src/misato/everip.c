@@ -171,14 +171,14 @@ out:
 }
 
 static struct csock *_from_tun( struct csock *csock
-                              , enum CSOCK_TYPE type
+                              , enum SOCK_TYPE type
                               , void *data )
 {
   uint16_t next_header;
   struct mbuf *mb = data;
   struct conduit_peer *cp_selected = NULL;
 
-  if (!csock || type != CSOCK_TYPE_DATA_MB || !mb)
+  if (!csock || type != SOCK_TYPE_DATA_MB || !mb)
     return NULL;
 
   mbuf_advance(mb, 4);
@@ -195,7 +195,7 @@ static struct csock *_from_tun( struct csock *csock
     mbuf_advance(mb, -4);
     /* back out on where you came */
     csock_forward( csock
-                 , CSOCK_TYPE_DATA_MB
+                 , SOCK_TYPE_DATA_MB
                  , mb );
     return NULL;
   }
@@ -221,13 +221,13 @@ static struct csock *_from_tun( struct csock *csock
 }
 
 static struct csock *_from_conduits( struct csock *csock
-                                   , enum CSOCK_TYPE type
+                                   , enum SOCK_TYPE type
                                    , void *data )
 {
   uint16_t next_header;
   struct conduit_data *cdata = data;
 
-  if (!csock || type != CSOCK_TYPE_DATA_CONDUIT || !cdata)
+  if (!csock || type != SOCK_TYPE_DATA_CONDUIT || !cdata)
     return NULL;
 
   debug("everip: _from_conduits [%u]\n", mbuf_get_left(cdata->mb));
@@ -267,7 +267,7 @@ static struct csock *_from_conduits( struct csock *csock
     ((uint16_t*)(void *)mbuf_buf(cdata->mb))[1] = arch_htobe16(0x86DD);
 
     csock_forward( &everip.cs_tunnel
-                 , CSOCK_TYPE_DATA_MB
+                 , SOCK_TYPE_DATA_MB
                  , cdata->mb );
   } else {
     /* later check return value... */

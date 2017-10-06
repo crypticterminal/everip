@@ -94,7 +94,7 @@ struct noise_keypair {
   bool its_my_plane;
   
   uint64_t rx_bytes, tx_bytes;
-  struct csock csock;
+  struct le lsock_le;
 };
 
 enum noise_handshake_state {
@@ -124,7 +124,7 @@ struct noise_session_handshake {
   uint8_t latest_timestamp[NOISE_TIMESTAMP_LEN];
   uint32_t remote_index;
 
-  struct csock csock;
+  struct le lsock_le;
 };
 
 struct noise_session {
@@ -157,8 +157,6 @@ struct noise_session {
   bool sent_lastminute_handshake;
 
   struct tmr tmr_hs_new, tmr_hs_rexmit, tmr_keepalive, tmr_zero, tmr_persist;
-
-  struct csock cs_recv;
 
 };
 
@@ -284,24 +282,12 @@ static void noise_session_event_run( struct noise_session *ns
   event.type = type;
 
   if (ns->keypair_now) {
-    csock_forward(&ns->keypair_now->csock, CSOCK_TYPE_NOISE_EVENT, &event);
-  }
-
-  if (type < NOISE_SESSION_EVENT_CONNECTED) {
-    if (ns->keypair_then) {
-      csock_forward(&ns->keypair_then->csock, CSOCK_TYPE_NOISE_EVENT, &event);
-    }
-
-    if (ns->keypair_next) {
-      csock_forward(&ns->keypair_next->csock, CSOCK_TYPE_NOISE_EVENT, &event);
-    }
+    lsock_forward(&ns->keypair_now->lsock_le, SOCK_TYPE_NOISE_EVENT, &event);
   }
   
   magi_eventdriver_handler_run( ns->ne->ed
                               , MAGI_EVENTDRIVER_WATCH_NOISE
                               , &event );
-  /*csock_forward(&ns->cs_event, CSOCK_TYPE_NOISE_EVENT, &event);*/
-  /*csock_forward(&ns->ne->cs_event, CSOCK_TYPE_NOISE_EVENT, &event);*/
 
 }
 
@@ -421,6 +407,9 @@ static void _handshake_zero(struct noise_session_handshake *handshake)
   sodium_memzero(&handshake->chaining_key, NOISE_HASH_LEN);
   handshake->remote_index = 0;
   handshake->state = HANDSHAKE_ZEROED;
+
+  list_unlink(&handshake->lsock_le);
+
 }
 
 static void _message_ephemeral( uint8_t ephemeral_dst[NOISE_PUBLIC_KEY_LEN]
@@ -614,7 +603,7 @@ int noise_session_counters( struct noise_session *ns
 
 int noise_session_hs_step1_pilot( struct noise_session *ns
                                 , bool is_retry
-                                , struct csock *csock )
+                                , struct lsock *lsock )
 {
   struct mbuf *mb = NULL;
   size_t mb_pos;
@@ -645,8 +634,6 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
     || ns->event_last > NOISE_SESSION_EVENT_REKEY )
     return EALREADY;
 
-  csock_flow(&hs->csock, csock);
-
   if (ns->last_sent_handshake + REKEY_TIMEOUT > tmr_jiffies())
     return EALREADY;
 
@@ -655,6 +642,8 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
   out_type = arch_htole32(1);
 
   _handshake_init(ns->ne, hs->chaining_key, hs->hash, hs->remote_static);
+
+  lsock_install(lsock, &hs->lsock_le, ns);
 
   /* e */
   randombytes_buf(hs->ephemeral_private, 32);
@@ -738,7 +727,7 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
 
   noise_session_tmr_control(ns, NOISE_TIMER_ON_HAND_INIT);
 
-  csock_forward(&hs->csock, CSOCK_TYPE_DATA_MB, mb);
+  lsock_forward(&hs->lsock_le, SOCK_TYPE_DATA_MB, mb);
 
 out:
   sodium_memzero(key, NOISE_SYMMETRIC_KEY_LEN);
@@ -1181,12 +1170,12 @@ static int _noise_session_send( struct noise_session *ns
         && ns->keypair_now->sending.birthdate + REKEY_AFTER_TIME < tmr_jiffies() )))
   {
     noise_session_event_run(ns, NOISE_SESSION_EVENT_REKEY);
-    noise_session_hs_step1_pilot(ns, false, ns->keypair_now->csock.adj);
+    noise_session_hs_step1_pilot(ns, false, lsock_fromle(&ns->keypair_now->lsock_le));
   }
 
   mbuf_set_pos(mb, mb_pos);
 
-  csock_forward(&ns->keypair_now->csock, CSOCK_TYPE_DATA_MB, mb);
+  lsock_forward(&ns->keypair_now->lsock_le, SOCK_TYPE_DATA_MB, mb);
 
   ns->tx_bytes += mlen;
   ns->keypair_now->tx_bytes += mlen;
@@ -1210,6 +1199,7 @@ static void noise_session_tmr_zero(void *arg)
   noise_session_event_run(ns, NOISE_SESSION_EVENT_ZERO);
 
   _handshake_zero(&ns->handshake);
+
   ns->keypair_now = mem_deref( ns->keypair_now );
   ns->keypair_then = mem_deref( ns->keypair_then );
   ns->keypair_next = mem_deref( ns->keypair_next );
@@ -1225,7 +1215,11 @@ static void noise_session_tmr_hs_new(void *arg)
   noise_debug("TMR noise_session_tmr_hs_new\n");
   noise_session_event_run(ns, NOISE_SESSION_EVENT_HSHAKE);
 
-  noise_session_hs_step1_pilot(ns, false, ns->keypair_now->csock.adj);
+  noise_session_hs_step1_pilot( ns
+                              , false
+                              , ns->keypair_now ? 
+                                  lsock_fromle(&ns->keypair_now->lsock_le) : NULL
+                              );
 
 }
 
@@ -1247,7 +1241,11 @@ static void noise_session_tmr_hs_rexmit(void *arg)
     }
   } else {
     ++ns->tmr_hs_attempts;
-    noise_session_hs_step1_pilot(ns, true, NULL);
+    noise_session_hs_step1_pilot( ns
+                                , true
+                                , ns->keypair_now ? 
+                                    lsock_fromle(&ns->keypair_now->lsock_le) : NULL
+                                );
   }
 }
 
@@ -1499,7 +1497,7 @@ static int noise_engine_data_rx( struct noise_engine *ne
                                , struct noise_session **nsp
                                , uintptr_t channel_lock
                                , struct mbuf *mb
-                               , struct csock *csock)
+                               , struct lsock *lsock)
 {
   uint8_t nonce[NOICE_NONCE_LEN] = {0};
   uint64_t *nonce_64 = (uint64_t *)(void *)&nonce[NOICE_NONCE_LEN - sizeof(uint64_t)];
@@ -1579,8 +1577,8 @@ static int noise_engine_data_rx( struct noise_engine *ne
 
   }
 
-  /* change csock if need be */
-  csock_flow(&ns->keypair_now->csock, csock);
+  /* change sock if need be */
+  lsock_install(lsock, &ns->keypair_now->lsock_le, ns);
 
   if ( ns->keypair_now->sending.is_valid
     && ns->keypair_now->its_my_plane
@@ -1590,7 +1588,11 @@ static int noise_engine_data_rx( struct noise_engine *ne
     /* stale connection, rekey! */
     ns->sent_lastminute_handshake = true;
     /* need to queue in tmr? */
-    noise_session_hs_step1_pilot(ns, false, ns->keypair_now->csock.adj);
+    noise_session_hs_step1_pilot( ns
+                                , false
+                                , ns->keypair_now ? 
+                                    lsock_fromle(&ns->keypair_now->lsock_le) : NULL
+                                );
   }
 
   noise_session_tmr_control(ns, NOISE_TIMER_ON_DATA_RX);
@@ -1611,9 +1613,6 @@ int noise_session_handle_register( struct noise_session *ns
                                  , struct csock *csock )
 {
   switch (type) {
-    case NOISE_SESSION_HANDLE_RECV:
-      csock_flow(&ns->cs_recv, csock);
-      break;
     default:
       return EINVAL;
       break;
@@ -1626,9 +1625,6 @@ int noise_engine_session_handle_register( struct noise_engine *ne
                                         , struct csock *csock )
 {
   switch (type) {
-    case NOISE_SESSION_HANDLE_EVENT:
-      csock_flow(&ne->cs_event, csock);
-      break;
     default:
       return EINVAL;
       break;
@@ -1640,7 +1636,7 @@ int noise_engine_recieve( struct noise_engine *ne
                         , struct noise_session **nsp
                         , uintptr_t channel_lock
                         , struct mbuf *mb
-                        , struct csock *csock )
+                        , struct lsock *lsock )
 {
   enum NOISE_ENGINE_RECIEVE err = NOISE_ENGINE_RECIEVE_OK;
   uint32_t type;
@@ -1673,8 +1669,8 @@ int noise_engine_recieve( struct noise_engine *ne
           noise_session_tmr_control(ns, NOISE_TIMER_ON_EKEY);
           noise_session_tmr_control(ns, NOISE_TIMER_ON_POLY_TXRX);
           /* RAW SEND */
-          csock_flow(&ns->keypair_next->csock, csock);
-          csock_forward(&ns->keypair_next->csock, CSOCK_TYPE_DATA_MB, mb_reply);
+          lsock_install(lsock, &ns->keypair_next->lsock_le, ns);
+          lsock_forward(&ns->keypair_next->lsock_le, SOCK_TYPE_DATA_MB, mb_reply);
         } else {
           handshake_error("noise_session_hs_begin\n");
         }
@@ -1692,7 +1688,7 @@ int noise_engine_recieve( struct noise_engine *ne
       }
 
       if (noise_session_hs_step5_begin(ns)) {
-        csock_flow(&ns->keypair_now->csock, csock);
+        lsock_install(lsock, &ns->keypair_now->lsock_le, ns);
         noise_session_tmr_control(ns, NOISE_TIMER_ON_EKEY);
         noise_session_event_run(ns, NOISE_SESSION_EVENT_BEGIN_PILOT);
       } else {
@@ -1706,7 +1702,7 @@ int noise_engine_recieve( struct noise_engine *ne
       /* @FALLTHROUGH@ */
     case 4: /* data */
       /*error("noise_engine_data_rx BEFORE: [%W]\n", mbuf_buf(mb), mbuf_get_left(mb));*/
-      if (noise_engine_data_rx(ne, &ns, channel_lock, mb, csock)) {
+      if (noise_engine_data_rx(ne, &ns, channel_lock, mb, lsock)) {
         err = NOISE_ENGINE_RECIEVE_IGNORE;
         noise_error( "[NOISE] noise_engine_data_rx ignore\n");
       } else {
@@ -1791,7 +1787,7 @@ static void noise_keypair_destructor(void *data)
   hash_unlink(&kp->lookup.le);
   sodium_memzero(kp, sizeof(*kp));
 
-  csock_stop(&kp->csock);
+  list_unlink(&kp->lsock_le);
 }
 
 static int noise_keypair_create( struct noise_keypair **keypairp

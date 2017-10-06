@@ -35,7 +35,7 @@ struct tunif_un {
 };
 
 static struct csock *_from_terminaldogma( struct csock *csock
-                                        , enum CSOCK_TYPE type
+                                        , enum SOCK_TYPE type
                                         , void *data )
 {
   ssize_t n;
@@ -45,7 +45,7 @@ static struct csock *_from_terminaldogma( struct csock *csock
 
   socklen_t len;
 
-  if (!csock || type != CSOCK_TYPE_DATA_MB || !mb)
+  if (!csock || type != SOCK_TYPE_DATA_MB || !mb)
     return NULL;
 
   if (mbuf_get_left(mb) < 4) {
@@ -120,7 +120,7 @@ static void tun_read_handler(int flags, void *arg)
   ((uint16_t*)(void *)mbuf_buf(mb))[0] = 0;
   ((uint16_t*)(void *)mbuf_buf(mb))[1] = arch_htobe16(0x86DD);
 
-  csock_forward(&tun->pub.cs_tmldogma, CSOCK_TYPE_DATA_MB, mb);
+  csock_forward(&tun->pub.cs_tmldogma, SOCK_TYPE_DATA_MB, mb);
 
 out:
   mem_deref(mb);

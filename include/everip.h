@@ -341,26 +341,69 @@ int magi_melchior_alloc( struct magi_melchior **mmp
                        , struct magi *magi
                        , struct noise_engine *ne );
 
+/* socks */
+
+enum SOCK_TYPE {
+     SOCK_TYPE_DATA_MB = 0
+   , SOCK_TYPE_DATA_CONDUIT
+   , SOCK_TYPE_NOISE_EVENT
+};
+
+/*
+ * LSOCK (list sock)
+ */
+
+struct lsock;
+
+typedef int (lsock_send_h)(struct lsock *lsock, enum SOCK_TYPE type, void *data);
+
+struct lsock {
+  lsock_send_h *s;
+  struct list l;
+};
+
+static inline struct lsock *lsock_fromle(struct le *ls_le)
+{
+  return container_of(ls_le->list, struct lsock, l);
+}
+
+static inline void lsock_forward(struct le *ls_le, enum SOCK_TYPE type, void *data)
+{
+  struct lsock *ls = NULL;
+
+  if (!ls_le || !ls_le->list)
+    return;
+
+  ls = container_of(ls_le->list, struct lsock, l);
+
+  if (ls->s)
+    (void)ls->s(ls, type, data);
+
+}
+
+static inline void lsock_install(struct lsock *ls, struct le *le, void *data)
+{
+  if (!ls || !le) return;
+
+  if (!list_contains(&ls->l, le))  
+    list_prepend(&ls->l, le, data);
+
+}
+
 /*
  * CSOCK
  */
 
 struct csock;
 
-enum CSOCK_TYPE {
-     CSOCK_TYPE_DATA_MB = 0
-   , CSOCK_TYPE_DATA_CONDUIT
-   , CSOCK_TYPE_NOISE_EVENT
-};
-
-typedef struct csock *(csock_send_h)(struct csock *csock, enum CSOCK_TYPE type, void *data);
+typedef struct csock *(csock_send_h)(struct csock *csock, enum SOCK_TYPE type, void *data);
 
 struct csock {
   csock_send_h *send;
   struct csock *adj;
 };
 
-static inline void csock_forward(struct csock *csock, enum CSOCK_TYPE type, void *data)
+static inline void csock_forward(struct csock *csock, enum SOCK_TYPE type, void *data)
 {
   do {
     struct csock* adj = csock->adj;
@@ -369,7 +412,7 @@ static inline void csock_forward(struct csock *csock, enum CSOCK_TYPE type, void
   } while (csock);
 }
 
-static inline struct csock *csock_next(struct csock *csock, enum CSOCK_TYPE type, void *data)
+static inline struct csock *csock_next(struct csock *csock, enum SOCK_TYPE type, void *data)
 {
   if (!csock || !csock->adj) return NULL;
   csock_forward(csock, type, data);
@@ -494,7 +537,7 @@ int noise_session_keepalive_recv(struct noise_session *ns, struct mbuf *mb);
 
 int noise_session_hs_step1_pilot( struct noise_session *ns
                                 , bool is_retry
-                                , struct csock *csock );
+                                , struct lsock *lsock );
 
 int noise_session_send(struct noise_session *ns, struct mbuf *mb);
 
@@ -535,7 +578,7 @@ int noise_engine_recieve( struct noise_engine *ne
                         , struct noise_session **nsp
                         , uintptr_t channel_lock
                         , struct mbuf *mb
-                        , struct csock *csock );
+                        , struct lsock *lsock );
 
 int noise_engine_publickey_copy( struct noise_engine *ne
                                , uint8_t public_key[NOISE_PUBLIC_KEY_LEN] );
@@ -614,9 +657,10 @@ struct conduit_peer {
   uint8_t flags;
   uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
   struct conduit *conduit;
-  struct noise_session *ns;
   enum NOISE_SESSION_EVENT ns_last_event;
-  struct csock csock;
+
+  struct lsock lsock;
+
 };
 
 struct conduit_data {
@@ -628,18 +672,20 @@ static inline int conduit_peer_debug(struct re_printf *pf, struct conduit_peer *
 {
   int err = 0;
   struct sa laddr;
+  struct noise_session *ns = NULL;
   struct noise_session_counters nsc;
 
   sa_set_in6(&laddr, peer->everip_addr, 0);
 
   memset(&nsc, 0, sizeof(nsc));
-  err = noise_session_counters(peer->ns, &nsc);
+  ns = list_ledata(peer->lsock.l.head);
+  err = noise_session_counters(ns, &nsc);
 
   err  = re_hprintf(pf, "[%j][%p][%s][SCORE=%u][TX=%zu][RX=%zu]"
                       , &laddr
-                      , peer->ns
+                      , ns
                       , noise_session_event_tostr(peer->ns_last_event)
-                      , noise_session_score(peer->ns)
+                      , noise_session_score(ns)
                       , nsc.tx_bytes
                       , nsc.rx_bytes
                       );
@@ -648,9 +694,8 @@ static inline int conduit_peer_debug(struct re_printf *pf, struct conduit_peer *
 
 static inline void conduit_peer_deref(struct conduit_peer *peer)
 {
-  csock_stop(&peer->csock);
   list_unlink(&peer->le_addr);
-  peer->ns = NULL;
+  list_clear(&peer->lsock.l);
 }
 
 int conduit_peer_encrypted_send( struct conduit_peer *cp
