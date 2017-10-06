@@ -1391,6 +1391,8 @@ static void noise_session_destructor(void *data)
 
   noise_session_event_run(ns, NOISE_SESSION_EVENT_CLOSE);
 
+  _handshake_zero(&ns->handshake);
+
   hash_unlink(&ns->lookup.le);
   list_unlink(&ns->le_all);
 
@@ -1785,9 +1787,10 @@ static void noise_keypair_destructor(void *data)
 {
   struct noise_keypair *kp = data;
   hash_unlink(&kp->lookup.le);
-  sodium_memzero(kp, sizeof(*kp));
-
   list_unlink(&kp->lsock_le);
+
+  /* this must be last */
+  sodium_memzero(kp, sizeof(*kp));
 }
 
 static int noise_keypair_create( struct noise_keypair **keypairp
