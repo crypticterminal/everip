@@ -26,7 +26,7 @@ extern "C" {
 #include "__arch.h"
 #include "__wires.h"
 
-#define EVERIP_VERSION "0.1.0"
+#define EVERIP_VERSION "0.1.1"
 
 #define EVERIP_VERSION_PROTOCOL 3
 
