@@ -213,6 +213,7 @@ static int _ledbat_sock_write(struct ledbat_sock *lsock)
     if (!mb)
       continue;
 
+again:
     sent = utp_write(lsock->sock, mbuf_buf(mb), mbuf_get_left(mb));
     if (sent <= 0) {
       debug("socket no longer writable\n");
@@ -228,7 +229,7 @@ static int _ledbat_sock_write(struct ledbat_sock *lsock)
       lsock->bufs[i % LEDBAT_BUF_LIMIT] = mem_deref(mb);
       continue;
     } else { /* full? */
-      break;
+      goto again;
     }
   }
 out:
@@ -553,6 +554,8 @@ int ledbat_process_incoming( struct ledbat *l
 
   sa_init(&laddr, AF_INET6);
   sa_set_in6(&laddr, everip_addr, 0);
+
+  utp_issue_deferred_acks(l->utp);
 
   if (!utp_process_udp( l->utp
                       , mbuf_buf(mb)
