@@ -346,12 +346,20 @@ static struct csock *_from_outside( struct csock *csock
   return NULL;
 }
 
+struct _conduits_conduit_peer_lookup_s {
+  const uint8_t *everip_addr;
+  bool allow_virtual;
+};
+
 static bool _conduits_conduit_peer_lookup(struct le *le, void *arg)
 {
   struct conduit_peer *cp = le->data;
-  if (cp->ns_last_event < NOISE_SESSION_EVENT_CONNECTED)
+  struct _conduits_conduit_peer_lookup_s *tool = arg;
+  if (!cp->conduit || cp->ns_last_event < NOISE_SESSION_EVENT_CONNECTED)
     return false;
-  return 0 == memcmp(cp->everip_addr, (uint8_t *)arg, EVERIP_ADDRESS_LENGTH);
+  if (!tool->allow_virtual && (cp->conduit->flags & CONDUIT_FLAG_VIRTUAL))
+    return false;
+  return 0 == memcmp(cp->everip_addr, tool->everip_addr, EVERIP_ADDRESS_LENGTH);
 }
 
 static bool _conduits_conduit_peer_sort_h(struct le *le1, struct le *le2, void *arg)
@@ -367,11 +375,15 @@ static bool _conduits_conduit_peer_sort_h(struct le *le1, struct le *le2, void *
 
   ns_1 = list_ledata(cp_1->lsock.l.head);
   if (!ns_1)
-    score_1 = 1;
+    score_1 += 1;
+
+  score_1 += cp_1->conduit->flags & CONDUIT_FLAG_SECONDARY ? 1 : 0;
 
   ns_2 = list_ledata(cp_2->lsock.l.head);
   if (!ns_2)
-    score_2 = 1;
+    score_2 += 1;
+
+  score_2 += cp_2->conduit->flags & CONDUIT_FLAG_SECONDARY ? 1 : 0;
 
   if (score_2 < score_1)
     return false;
@@ -387,6 +399,7 @@ static bool _conduits_conduit_peer_sort_h(struct le *le1, struct le *le2, void *
 
 struct conduit_peer *
 conduits_conduit_peer_search( struct conduits *conduits
+                            , bool allow_virtual
                             , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] )
 {
   uint32_t _id;
@@ -394,6 +407,8 @@ conduits_conduit_peer_search( struct conduits *conduits
   struct list *sort_list = NULL;
   struct conduit *c;
   struct conduit_peer *cp = NULL;
+
+  struct _conduits_conduit_peer_lookup_s lookup_s;
 
   if (!conduits || !everip_addr)
     return NULL;
@@ -412,10 +427,13 @@ conduits_conduit_peer_search( struct conduits *conduits
 #endif
   }
 
+  lookup_s.everip_addr = everip_addr;
+  lookup_s.allow_virtual = allow_virtual;
+
   cp = list_ledata(hash_lookup( conduits->hash_cp_addr
                               , _id
                               , _conduits_conduit_peer_lookup
-                              , (void *)everip_addr));
+                              , &lookup_s));
 
   if (!cp) {
     /* oh boy, here we go! */
