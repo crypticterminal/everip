@@ -181,7 +181,7 @@ static int stack_link_count(uint8_t binrep[ROUTE_LENGTH])
 }
 #endif
 
-int stack_linf_diff(uint8_t left[ROUTE_LENGTH], uint8_t right[ROUTE_LENGTH], int *places)
+int stack_linf_diff(const uint8_t left[ROUTE_LENGTH], const uint8_t right[ROUTE_LENGTH], int *places)
 {
   int i = 0;
   int tmp = 0;
