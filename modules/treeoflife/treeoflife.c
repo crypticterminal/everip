@@ -170,7 +170,7 @@ static int treeoflife_dhti_add_or_update( struct treeoflife_zone *zone
   memcpy(dhti->binrep, binrep, TOL_ROUTE_LENGTH);
 
   /* update timer here */
-  //tmr_start(&dhti->tmr, TOL_DHT_TIMEOUT_MS, treeoflife_dhti_tmr_cb, dhti);
+  tmr_start(&dhti->tmr, TOL_DHT_TIMEOUT_MS, treeoflife_dhti_tmr_cb, dhti);
 
 out:
   return err;
@@ -370,15 +370,15 @@ int treeoflife_everip_for_route( struct treeoflife_csock *tol_c
 
     local_diff = stack_linf_diff(route, zone->binrep, &places);
 
-    info("LOCAL DIFF = %d[PLACES=%d]\n", local_diff, places);
+    debug("LOCAL DIFF = %d[PLACES=%d]\n", local_diff, places);
 
     LIST_FOREACH(&zone->nodes_all, le) {
       peer = le->data;
-      info( "TRYING NODE [%W]{%H}[%s|%u]\n"
-          , peer->cp.everip_addr, EVERIP_ADDRESS_LENGTH
-          , stack_debug, peer->z[i].binrep
-          , peer->is_onehop ? "OH" : "NH"
-          , peer->z[i].binlen);
+      debug( "TRYING NODE [%W]{%H}[%s|%u]\n"
+           , peer->cp.everip_addr, EVERIP_ADDRESS_LENGTH
+           , stack_debug, peer->z[i].binrep
+           , peer->is_onehop ? "OH" : "NH"
+           , peer->z[i].binlen);
       if (!peer->is_onehop || !peer->z[i].binlen)
         continue;
       temp_diff = stack_linf_diff(route, peer->z[i].binrep, &places);
@@ -386,7 +386,7 @@ int treeoflife_everip_for_route( struct treeoflife_csock *tol_c
         memcpy(everip_addr, peer->cp.everip_addr, EVERIP_ADDRESS_LENGTH);
         return 0;
       }
-      info("TEMP DIFF = %d[PLACES=%d]\n", temp_diff, places);
+      debug("TEMP DIFF = %d[PLACES=%d]\n", temp_diff, places);
       if (temp_diff < local_diff) {
         if (!peer_chosen || temp_diff < chosen_diff) {
           peer_chosen = peer;
@@ -423,7 +423,7 @@ static void _treeoflife_command_child_cb( enum MAGI_MELCHIOR_RETURN_STATUS statu
     return; /* ignore for now */
   }
 
-  info("I AM THE PARENT\n");
+  /*info("I AM THE PARENT\n");*/
 
   return;
 }
@@ -685,7 +685,7 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
   uint8_t *tmp_everip_record;
 
   if (!tol_c || !rpc) {
-    error("[TOL][DHT] EINVAL\n");
+    error("[TREE][DHT] EINVAL\n");
     return EINVAL;
   }
 
@@ -703,7 +703,7 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
 
   ode = odict_lookup(rpc->in, "zoneid");
   if (!ode || ode->type != ODICT_INT) {
-    error("[TOL][DHT] no zoneid\n");
+    error("[TREE][DHT] no zoneid\n");
     goto out;
   }
 
@@ -718,14 +718,14 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
 
   ode = odict_lookup(rpc->in, "root");
   if (!ode || ode->type != ODICT_STRING) {
-    error("[TOL][DHT] no root\n");
+    error("[TREE][DHT] no root\n");
     err = EPROTO;
     goto out;
   }
 
   /* root must be same as everip address */
   if (ode->u.pl.l != EVERIP_ADDRESS_LENGTH) {
-    error("[TOL][DHT] bad root length\n");
+    error("[TREE][DHT] bad root length\n");
     err = EPROTO;
     goto out;
   } 
@@ -734,14 +734,14 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
 
   /* if we are not the same root on the same zone, ignore! */
   if (memcmp(zone->root, tmp_rootp, EVERIP_ADDRESS_LENGTH)) {
-    error("[TOL][DHT] bad root\n");
+    error("[TREE][DHT] bad root\n");
     err = EPROTO;
     goto out;
   }
 
   ode = odict_lookup(rpc->in, "everip");
   if (!ode || ode->type != ODICT_STRING) {
-    error("[TOL][DHT] no everip\n");
+    error("[TREE][DHT] no everip\n");
     err = EPROTO;
     goto out;
   }
@@ -756,12 +756,12 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
 
   ode = odict_lookup(rpc->in, "mode");
   if (!ode || ode->type != ODICT_STRING) {
-    error("[TOL][DHT] no mode\n");
+    error("[TREE][DHT] no mode\n");
     err = EPROTO;
     goto out;
   }
 
-  info("[TOL][DHT] %r\n", &ode->u.pl);
+  debug("[TREE][DHT] %r\n", &ode->u.pl);
 
   /* mode switch */
   switch (ode->u.pl.l) {
@@ -956,7 +956,7 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
           }
         }
 
-        error("DHT NOTIFY!!!\n");
+        /*error("DHT NOTIFY!!!\n");*/
       }
       else if (!memcmp(ode->u.pl.p, "aquire", 6))
       {
@@ -1038,7 +1038,7 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
           }
         }
 
-        error("DHT AQUIRE!!!\n");
+        /*error("DHT AQUIRE!!!\n");*/
 
         /* if not found, forward on! */
         if (!zone->parent)
@@ -1161,7 +1161,7 @@ static int treeoflife_command_cb_child( struct treeoflife_csock *tol_c
   uint8_t *tmp_child_br;
   uint16_t tmp_child_bl;
 
-  info("[TREE] I AM THE CHILD\n");
+  /*info("[TREE] I AM THE CHILD\n");*/
 
   if (!tol_c || !rpc)
     return EINVAL;
@@ -1244,11 +1244,11 @@ static int treeoflife_command_cb_child( struct treeoflife_csock *tol_c
 
   /**/
 
-  info("ZONE[%u]BINREP[%H]\n", tmp_zoneid, stack_debug, tmp_parent_br);
+  debug("ZONE[%u]BINREP[%H]\n", tmp_zoneid, stack_debug, tmp_parent_br);
   zone->parent->z[tmp_zoneid].binlen = tmp_parent_bl;
   memcpy(zone->parent->z[tmp_zoneid].binrep, tmp_parent_br, TOL_ROUTE_LENGTH);
 
-  info("MY BINREP[%H]\n", stack_debug, tmp_child_br);
+  debug("MY BINREP[%H]\n", stack_debug, tmp_child_br);
   zone->binlen = tmp_child_bl;
   memcpy(zone->binrep, tmp_child_br, TOL_ROUTE_LENGTH);
 
@@ -1623,7 +1623,7 @@ int treeoflife_ledbat_recv( struct mbuf *mb )
   if (!g_tol)
     return EINVAL;
 
-  error("tol: [%u][%W]\n", mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));
+  /*error("tol: [%u][%W]\n", mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));*/
 
   /*
   [VERSION(1)][EVERIP(16)][ZONEID(1)][DST_BINLEN(1)]
@@ -1653,7 +1653,7 @@ int treeoflife_ledbat_recv( struct mbuf *mb )
   in__src_binlen = mbuf_read_u8(mb);
   mbuf_read_mem(mb, in__src_binrep, TOL_ROUTE_LENGTH);
 
-  error( "[TREE][ROUTE][v%u][%W] %u@%H -> %u@%H ? %u@%H\n"
+  debug( "[TREE][ROUTE][v%u][%W] %u@%H -> %u@%H ? %u@%H\n"
        , in__ver
        , in__everip, EVERIP_ADDRESS_LENGTH
        , in__src_binlen, stack_debug, in__src_binrep
@@ -1664,7 +1664,6 @@ int treeoflife_ledbat_recv( struct mbuf *mb )
   /* determine if we need to forward or eat the packet */
   if ( in__dst_binlen == zone->binlen
     && !memcmp(in__dst_binrep, zone->binrep, TOL_ROUTE_LENGTH)) {
-    error("[TREE] this is for ME\n");
 
     err = _treeoflife_peer_create(&peer, g_tol, in__everip);
     if (err != EALREADY) {
@@ -1820,23 +1819,23 @@ static int _sendto_virtual( struct conduit_peer *peer
 
   zone = &tol_c->zone[0];
 
-  info( "VIRTUAL REQUEST TO [%W]@[%H] from [%H]\n"
-      , peer->everip_addr
-      , EVERIP_ADDRESS_LENGTH
-      , stack_debug
-      , tp->z[0].binrep
-      , stack_debug
-      , zone->binrep
-      );
+  debug( "VIRTUAL REQUEST TO [%W]@[%H] from [%H]\n"
+       , peer->everip_addr
+       , EVERIP_ADDRESS_LENGTH
+       , stack_debug
+       , tp->z[0].binrep
+       , stack_debug
+       , zone->binrep
+       );
 
   if (treeoflife_everip_for_route( tol_c
                                  , tp->z[0].binrep
                                  , everip_addr_route ))
     goto out;
 
-  info( "ROUTING REQUEST VIA [%W]\n"
-      , everip_addr_route
-      , EVERIP_ADDRESS_LENGTH );
+  debug( "ROUTING REQUEST VIA [%W]\n"
+       , everip_addr_route
+       , EVERIP_ADDRESS_LENGTH );
 
   /* X:IDEA we should cache this in the future */
   mnode = magi_node_lookup_by_eipaddr(everip_magi(), everip_addr_route );
@@ -1844,8 +1843,6 @@ static int _sendto_virtual( struct conduit_peer *peer
   if (!mnode) {
     error("_sendto_virtual: hmm, no magi record!\n");
     goto out;
-  } else {
-    info("FOUND MNODE\n");
   }
 
   /* form packet for request */
@@ -1891,7 +1888,7 @@ static void treeoflife_maintain_tmr_cb(void *data)
   struct treeoflife_peer *peer = NULL;
   struct treeoflife_csock *tol_c = data;
 
-  info("[TREE] treeoflife_maintain_tmr_cb\n");
+  /*info("[TREE] treeoflife_maintain_tmr_cb\n");*/
 
   for (int i = 0; i < ZONE_COUNT; ++i) {
     zone = &tol_c->zone[i];
