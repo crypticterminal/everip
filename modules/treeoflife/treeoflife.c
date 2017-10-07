@@ -22,7 +22,7 @@
 #define TOL_ROUTE_LENGTH 16 /* 128 bytes */
 
 #define TOL_DHT_TIMEOUT_MS 15000
-
+#define TOL_MAINTAIN_MS 5000
 #define TOL_VERSION_ID 1U
 
 struct treeoflife_peer;
@@ -84,6 +84,8 @@ struct treeoflife_csock {
   struct treeoflife_zone zone[TOL_ZONE_COUNT];
 
   uint16_t child_counter;
+
+  struct tmr tmr_maintain;
 
 };
 
@@ -350,7 +352,7 @@ int treeoflife_peer_dht_found_send( const uint8_t everip_forward[EVERIP_ADDRESS_
 
 static
 int treeoflife_everip_for_route( struct treeoflife_csock *tol_c
-                               , uint8_t route[TOL_ROUTE_LENGTH]
+                               , const uint8_t route[TOL_ROUTE_LENGTH]
                                , uint8_t everip_addr[EVERIP_ADDRESS_LENGTH])
 {
   int places;
@@ -426,7 +428,7 @@ static void _treeoflife_command_child_cb( enum MAGI_MELCHIOR_RETURN_STATUS statu
   return;
 }
 
-static int treeoflife_peer_send_aschild( uint16_t zoneid
+static int treeoflife_peer_send_tochild( uint16_t zoneid
                                        , struct treeoflife_peer *peer )
 {
   int err = 0;
@@ -568,6 +570,8 @@ static void treeoflife_peer_destructor(void *data)
 {
   struct treeoflife_peer *peer = data;
 
+  error("[TREE] DESTRUCT [%W]\n", peer->cp.everip_addr, EVERIP_ADDRESS_LENGTH);
+
   /* x:start process cp */
   conduit_peer_deref(&peer->cp);
   /* x:end process cp */
@@ -668,21 +672,6 @@ static int _conduit_debug(struct re_printf *pf, void *arg)
   return err;
 }
 
-static int _peer_create( struct conduit_peer **peerp
-                       , struct pl *key
-                       , struct pl *host
-                       , void *arg )
-{
-
-  (void)key;
-  (void)host;
-  (void)arg;
-
-  *peerp = NULL;
-
-  return 0;
-}
-
 static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
                                     , struct magi_melchior_rpc *rpc )
 {
@@ -695,8 +684,10 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
 
   uint8_t *tmp_everip_record;
 
-  if (!tol_c || !rpc)
+  if (!tol_c || !rpc) {
+    error("[TOL][DHT] EINVAL\n");
     return EINVAL;
+  }
 
   rpc->out = NULL; /* they're not expecting anything back */
 
@@ -712,6 +703,7 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
 
   ode = odict_lookup(rpc->in, "zoneid");
   if (!ode || ode->type != ODICT_INT) {
+    error("[TOL][DHT] no zoneid\n");
     goto out;
   }
 
@@ -726,12 +718,14 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
 
   ode = odict_lookup(rpc->in, "root");
   if (!ode || ode->type != ODICT_STRING) {
+    error("[TOL][DHT] no root\n");
     err = EPROTO;
     goto out;
   }
 
   /* root must be same as everip address */
   if (ode->u.pl.l != EVERIP_ADDRESS_LENGTH) {
+    error("[TOL][DHT] bad root length\n");
     err = EPROTO;
     goto out;
   } 
@@ -740,17 +734,19 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
 
   /* if we are not the same root on the same zone, ignore! */
   if (memcmp(zone->root, tmp_rootp, EVERIP_ADDRESS_LENGTH)) {
+    error("[TOL][DHT] bad root\n");
     err = EPROTO;
     goto out;
   }
 
   ode = odict_lookup(rpc->in, "everip");
   if (!ode || ode->type != ODICT_STRING) {
+    error("[TOL][DHT] no everip\n");
     err = EPROTO;
     goto out;
   }
 
-  /* root must be same as everip address */
+  /* check length of everip address */
   if (ode->u.pl.l != EVERIP_ADDRESS_LENGTH) {
     err = EPROTO;
     goto out;
@@ -760,9 +756,12 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
 
   ode = odict_lookup(rpc->in, "mode");
   if (!ode || ode->type != ODICT_STRING) {
+    error("[TOL][DHT] no mode\n");
     err = EPROTO;
     goto out;
   }
+
+  info("[TOL][DHT] %r\n", &ode->u.pl);
 
   /* mode switch */
   switch (ode->u.pl.l) {
@@ -935,7 +934,8 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
                                                  , tmp_br
                                                  , tmp_bl );
           }
-          else {/* no parent, we shelve off to all local peers */
+          else
+          { /* no parent, we shelve off to all local peers */
             LIST_FOREACH(&zone->nodes_all, le) {
               peer = le->data;
               if (!peer->is_onehop)
@@ -987,7 +987,29 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
         {
           struct le *le;
           uint8_t everip_addr_route[EVERIP_ADDRESS_LENGTH];
-          struct treeoflife_dhti *dhti;
+          struct treeoflife_dhti *dhti = NULL;
+
+          /* is it us? */
+          if (!memcmp(tol_c->my_everip, tmp_everip_record, EVERIP_ADDRESS_LENGTH)) {
+            if (treeoflife_everip_for_route( tol_c
+                                           , tmp_fbr
+                                           , everip_addr_route )) {
+              goto out;
+            }
+            treeoflife_peer_dht_found_send( everip_addr_route
+                                          , tol_c->my_everip
+                                          , tol_c->my_public_key
+                                          , tmp_zoneid
+                                          , tmp_rootp
+                                          , tmp_fbr /* from */
+                                          , tmp_fbl /* from */
+                                          , tol_c->zone[tmp_zoneid].binrep /* record */
+                                          , tol_c->zone[tmp_zoneid].binlen /* record */
+                                          );
+
+            /* do not forward; goto out */
+            goto out;
+          }
 
           LIST_FOREACH(&zone->dhti_all, le) {
             dhti = le->data;
@@ -995,8 +1017,9 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
             if (!memcmp(dhti->everip_addr, tmp_everip_record, EVERIP_ADDRESS_LENGTH)) {
               if (treeoflife_everip_for_route( tol_c
                                              , tmp_fbr
-                                             , everip_addr_route ))
+                                             , everip_addr_route )) {
                 goto out;
+              }
 
               treeoflife_peer_dht_found_send( everip_addr_route
                                             , dhti->everip_addr
@@ -1015,8 +1038,20 @@ static int treeoflife_command_cb_dht( struct treeoflife_csock *tol_c
           }
         }
 
-        /* if not found, forward on! */
         error("DHT AQUIRE!!!\n");
+
+        /* if not found, forward on! */
+        if (!zone->parent)
+          goto out;
+
+        treeoflife_peer_dht_aquire_send( zone->parent->cp.everip_addr
+                                       , tmp_everip_record
+                                       , tmp_zoneid
+                                       , tmp_rootp
+                                       , tmp_fbr
+                                       , tmp_fbl
+                                       );
+
       } else {
         err = EPROTO;
         goto out;
@@ -1126,7 +1161,7 @@ static int treeoflife_command_cb_child( struct treeoflife_csock *tol_c
   uint8_t *tmp_child_br;
   uint16_t tmp_child_bl;
 
-  info("I AM THE CHILD\n");
+  info("[TREE] I AM THE CHILD\n");
 
   if (!tol_c || !rpc)
     return EINVAL;
@@ -1223,7 +1258,7 @@ static int treeoflife_command_cb_child( struct treeoflife_csock *tol_c
     LIST_FOREACH(&zone->nodes_all, le) {
       _p = le->data;
       if (_p->z[tmp_zoneid].is_my_child) {
-        treeoflife_peer_send_aschild(tmp_zoneid, _p);
+        treeoflife_peer_send_tochild(tmp_zoneid, _p);
       } else if (_p->is_onehop && _p != zone->parent) {
         treeoflife_peer_send_update(tmp_zoneid, _p);
       }
@@ -1356,16 +1391,16 @@ static void _treeoflife_command_zone_cb( enum MAGI_MELCHIOR_RETURN_STATUS status
   list_append(&zone->nodes_all, &peer->le_zone[tmp__zoneid], peer);
 
   if ( tmp__i_am_your_child ) {
-    info("TREE: [%W] is my child!\n", everip_addr, EVERIP_ADDRESS_LENGTH);
+    info("[TREE] [%W] is my child!\n", everip_addr, EVERIP_ADDRESS_LENGTH);
 
     peer->z[tmp__zoneid].is_my_child = true;
 
-    err = treeoflife_peer_send_aschild( tmp__zoneid, peer );
+    err = treeoflife_peer_send_tochild( tmp__zoneid, peer );
     if (err)
       goto out;
 
   } else {
-    info("TREE: [%W] is NOT my child!\n", everip_addr, EVERIP_ADDRESS_LENGTH);
+    info("[TREE] [%W] is NOT my child!\n", everip_addr, EVERIP_ADDRESS_LENGTH);
     peer->z[tmp__zoneid].is_my_child = false;
   }
 
@@ -1496,6 +1531,13 @@ static int treeoflife_command_cb_zone( struct treeoflife_csock *tol_c
     memcpy(zone->root, tmp_rootp, EVERIP_ADDRESS_LENGTH);
     zone->height = tmp_height + weight;
     odict_entry_add( rpc->out, "am_child", ODICT_INT, 1);
+
+    /* flush all dhti on change of root/parent */
+    for (int i = 0; i < TOL_ZONE_COUNT; ++i)
+    {
+      list_flush(&tol_c->zone[i].dhti_all);
+    }
+
   }
   else {
     odict_entry_add( rpc->out, "am_child", ODICT_INT, 0);
@@ -1524,7 +1566,10 @@ static int treeoflife_command_callback( struct magi_melchior_rpc *rpc
   if (!rpc || !tol_c || !method)
     return EINVAL;
 
-  info("treeoflife_command_callback: [%b]\n", method->p, method->l);
+  info( "[TREE] treeoflife_command_callback: [%r] from %w\n"
+      , method
+      , rpc->everip_addr, EVERIP_ADDRESS_LENGTH
+      );
 
   switch (method->l) {
     case 3:
@@ -1560,7 +1605,108 @@ static int treeoflife_command_callback( struct magi_melchior_rpc *rpc
 
 int treeoflife_ledbat_recv( struct mbuf *mb )
 {
+  int err = 0;
+  size_t pos_top;
+  uint8_t in__ver;
+  uint8_t in__zoneid;
+  uint8_t in__everip[EVERIP_ADDRESS_LENGTH];
+  uint8_t in__dst_binlen;
+  uint8_t in__dst_binrep[TOL_ROUTE_LENGTH];
+  uint8_t in__src_binlen;
+  uint8_t in__src_binrep[TOL_ROUTE_LENGTH];
+
+  struct magi_node *mnode = NULL;
+  struct treeoflife_zone *zone = NULL;
+  struct treeoflife_peer *peer = NULL;
+  uint8_t everip_addr_route[EVERIP_ADDRESS_LENGTH] = {0};
+
+  if (!g_tol)
+    return EINVAL;
+
   error("tol: [%u][%W]\n", mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));
+
+  /*
+  [VERSION(1)][EVERIP(16)][ZONEID(1)][DST_BINLEN(1)]
+  [DST_BINROUTE(ROUTE_LENGTH)][SRC_BINLEN(1)][SRC_BINROUTE(ROUTE_LENGTH)]
+  */
+
+  if (mbuf_get_left(mb) < (1+EVERIP_ADDRESS_LENGTH+1+1+TOL_ROUTE_LENGTH+1+TOL_ROUTE_LENGTH))
+    goto out; /* eproto */
+
+  pos_top = mb->pos;
+
+  in__ver = mbuf_read_u8(mb);
+
+  mbuf_read_mem(mb, in__everip, EVERIP_ADDRESS_LENGTH);
+  if (in__everip[0] != 0xFC)
+    goto out;
+
+  in__zoneid = mbuf_read_u8(mb);
+  if (in__zoneid >= TOL_ZONE_COUNT)
+    goto out;
+
+  zone = &g_tol->zone[in__zoneid];
+
+  in__dst_binlen = mbuf_read_u8(mb);
+  mbuf_read_mem(mb, in__dst_binrep, TOL_ROUTE_LENGTH);
+
+  in__src_binlen = mbuf_read_u8(mb);
+  mbuf_read_mem(mb, in__src_binrep, TOL_ROUTE_LENGTH);
+
+  error( "[TREE][ROUTE][v%u][%W] %u@%H -> %u@%H ? %u@%H\n"
+       , in__ver
+       , in__everip, EVERIP_ADDRESS_LENGTH
+       , in__src_binlen, stack_debug, in__src_binrep
+       , in__dst_binlen, stack_debug, in__dst_binrep
+       , zone->binlen, stack_debug, zone->binrep
+       );
+
+  /* determine if we need to forward or eat the packet */
+  if ( in__dst_binlen == zone->binlen
+    && !memcmp(in__dst_binrep, zone->binrep, TOL_ROUTE_LENGTH)) {
+    error("[TREE] this is for ME\n");
+
+    err = _treeoflife_peer_create(&peer, g_tol, in__everip);
+    if (err != EALREADY) {
+      if (err)
+        goto out;
+      /* new peer, so binlen/rep from packet */
+      peer->z[in__zoneid].binlen = in__src_binlen;
+      memcpy(peer->z[0].binrep, in__src_binrep, TOL_ROUTE_LENGTH);
+    }
+
+    err = conduit_incoming(g_tol->conduit, &peer->cp, mb);
+
+    if (err && err != EALREADY) {
+      peer = mem_deref( peer );
+    } else {
+      /* update peer if need be */
+      peer->z[in__zoneid].binlen = in__src_binlen;
+      memcpy(peer->z[0].binrep, in__src_binrep, TOL_ROUTE_LENGTH);
+    }
+
+    goto out;
+  }
+  else
+  { /* forwardable */
+    if (treeoflife_everip_for_route(g_tol, in__dst_binrep, everip_addr_route))
+      goto out;
+
+    mnode = magi_node_lookup_by_eipaddr(everip_magi(), everip_addr_route );
+
+    if (!mnode) {
+      error("_sendto_virtual: hmm, no magi record!\n");
+      goto out;
+    }
+
+    mbuf_set_pos(mb, pos_top);
+
+    /* send packet via ledbat */
+    magi_node_ledbat_send(mnode, mb, MAGI_LEDBAT_PORT_TREEOFLIFE);
+
+  }
+
+out:
   return 0;
 }
 
@@ -1632,11 +1778,15 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
   if (!tol_c || !event || type != MAGI_EVENTDRIVER_WATCH_E2E)
     return 0;
 
+  peer = _treeoflife_peer_lookup(tol_c, event->everip_addr);
+  if (peer && !peer->is_onehop)
+    goto out;
+
   switch (event->status) {
+    case MAGI_NODE_STATUS_REMOVAL:
     case MAGI_NODE_STATUS_OFFLINE:
-    case MAGI_NODE_STATUS_SEARCHING:
-      debug("TREEOFLIFE: node [%W] has gone offline!\n", event->everip_addr, EVERIP_ADDRESS_LENGTH);
-      peer = _treeoflife_peer_lookup(tol_c, event->everip_addr);
+    // case MAGI_NODE_STATUS_SEARCHING:
+      /*debug("TREEOFLIFE: node [%W] has gone offline!\n", event->everip_addr, EVERIP_ADDRESS_LENGTH);*/
       peer = mem_deref(peer);
       break;
     case MAGI_NODE_STATUS_OPERATIONAL:
@@ -1647,6 +1797,7 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
       break;
   }
 
+out:
   return 0;
 }
 
@@ -1667,13 +1818,16 @@ static int _sendto_virtual( struct conduit_peer *peer
   if (!tp || !tol_c)
     return EINVAL;
 
-  info( "VIRTUAL REQUEST TO [%W]@[%H]\n"
+  zone = &tol_c->zone[0];
+
+  info( "VIRTUAL REQUEST TO [%W]@[%H] from [%H]\n"
       , peer->everip_addr
       , EVERIP_ADDRESS_LENGTH
       , stack_debug
-      , tp->z[0].binrep);
-
-  zone = &tol_c->zone[0];
+      , tp->z[0].binrep
+      , stack_debug
+      , zone->binrep
+      );
 
   if (treeoflife_everip_for_route( tol_c
                                  , tp->z[0].binrep
@@ -1684,6 +1838,7 @@ static int _sendto_virtual( struct conduit_peer *peer
       , everip_addr_route
       , EVERIP_ADDRESS_LENGTH );
 
+  /* X:IDEA we should cache this in the future */
   mnode = magi_node_lookup_by_eipaddr(everip_magi(), everip_addr_route );
 
   if (!mnode) {
@@ -1694,22 +1849,31 @@ static int _sendto_virtual( struct conduit_peer *peer
   }
 
   /* form packet for request */
-  /*[VERSION(1)][DST_BINLEN(1)][DST_BINROUTE(ROUTE_LENGTH)][SRC_BINLEN(1)][SRC_BINROUTE(ROUTE_LENGTH)]*/
+  /*
+  [VERSION(1)][EVERIP(16)][ZONEID(1)][DST_BINLEN(1)]
+  [DST_BINROUTE(ROUTE_LENGTH)][SRC_BINLEN(1)][SRC_BINROUTE(ROUTE_LENGTH)]
+  */
+
+  mbuf_advance(mb, -(ssize_t)(1+EVERIP_ADDRESS_LENGTH+1+1+TOL_ROUTE_LENGTH+1+TOL_ROUTE_LENGTH));
 
   pos_top = mb->pos;
-
-  mbuf_advance(mb, -(ssize_t)(1+1+TOL_ROUTE_LENGTH+1+TOL_ROUTE_LENGTH));
 
   /* version 1 */
   mbuf_write_u8(mb, TOL_VERSION_ID);
 
+  /* everip address */
+  mbuf_write_mem(mb, tol_c->my_everip, EVERIP_ADDRESS_LENGTH);
+
+  /* zone */
+  mbuf_write_u8(mb, 0); /* zone 0 only for now */
+
   /* dst */
-  mbuf_write_mem(mb, tp->z[0].binrep, TOL_ROUTE_LENGTH);
   mbuf_write_u8(mb, tp->z[0].binlen);
+  mbuf_write_mem(mb, tp->z[0].binrep, TOL_ROUTE_LENGTH);
 
   /* src */
-  mbuf_write_mem(mb, zone->binrep, TOL_ROUTE_LENGTH);
   mbuf_write_u8(mb, zone->binlen);
+  mbuf_write_mem(mb, zone->binrep, TOL_ROUTE_LENGTH);
 
   mbuf_set_pos(mb, pos_top);
 
@@ -1718,6 +1882,32 @@ static int _sendto_virtual( struct conduit_peer *peer
 
 out:
   return err;
+}
+
+static void treeoflife_maintain_tmr_cb(void *data)
+{
+  struct le *le;
+  struct treeoflife_zone *zone;
+  struct treeoflife_peer *peer = NULL;
+  struct treeoflife_csock *tol_c = data;
+
+  info("[TREE] treeoflife_maintain_tmr_cb\n");
+
+  for (int i = 0; i < ZONE_COUNT; ++i) {
+    zone = &tol_c->zone[i];
+    LIST_FOREACH(&zone->nodes_all, le) {
+      peer = le->data;
+      if (!peer->is_onehop)
+        continue;
+      treeoflife_command_send_zone(tol_c, peer->cp.everip_addr);
+    }
+  }
+
+  tmr_start( &tol_c->tmr_maintain
+           , TOL_MAINTAIN_MS
+           , &treeoflife_maintain_tmr_cb
+           , tol_c
+           );
 }
 
 static void treeoflife_destructor(void *data)
@@ -1729,6 +1919,9 @@ static void treeoflife_destructor(void *data)
   {
     list_flush(&tol_c->zone[i].dhti_all);
   }
+
+  tmr_cancel(&g_tol->tmr_maintain);
+
 }
 
 static int module_init(void)
@@ -1768,17 +1961,15 @@ static int module_init(void)
 
   conduits_register( &conduit
                    , everip_conduits()
-                   , CONDUIT_FLAG_VIRTUAL
+                   , CONDUIT_FLAG_VIRTUAL | CONDUIT_FLAG_SECONDARY
                    , "TREE"
                    , "Tree of Life"
                    );
 
-  if (!conduit)
-    return ENOMEM;
-
-  conduit_register_peer_create( conduit
-                              , _peer_create
-                              , NULL);
+  if (!conduit) {
+    err = ENOMEM;
+    goto out;
+  }
 
   conduit_register_send_handler( conduit
                                , _sendto_virtual
@@ -1802,6 +1993,13 @@ static int module_init(void)
   }
 
   g_tol->conduit = conduit;
+
+  tmr_init(&g_tol->tmr_maintain);
+  tmr_start( &g_tol->tmr_maintain
+           , TOL_MAINTAIN_MS
+           , &treeoflife_maintain_tmr_cb
+           , g_tol
+           );
 
 out:
   if (err) {
