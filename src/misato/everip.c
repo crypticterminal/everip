@@ -73,6 +73,7 @@ static uint64_t ledbat_callback_h(ledbat_callback_arguments *a, void *arg)
            , everip_addr, EVERIP_ADDRESS_LENGTH );
 
       cp_selected = conduits_conduit_peer_search( everip.conduits
+                                                , true /* virtual is OK */
                                                 , everip_addr );
       if (!cp_selected) {
         debug("ledbat_callback_h: peer not found yet\n");
@@ -203,6 +204,7 @@ static struct csock *_from_tun( struct csock *csock
   next_header = ihdr->next_header;
 
   cp_selected = conduits_conduit_peer_search( everip.conduits
+                                            , true /* virtual is OK */
                                             , ihdr->dst );
   if (!cp_selected) {
     debug("_from_tun: peer not found yet\n");
