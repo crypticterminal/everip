@@ -620,6 +620,7 @@ typedef int (conduit_debug_h)(struct re_printf *pf, void *arg);
 
 typedef int (conduit_search_h)(const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH], void *arg);
 
+#define CONDUIT_FLAG_NONE     (0)    /* No flags defined */
 #define CONDUIT_FLAG_DISABLED (1<<0) /* conduit is disabled and cannot be used */
 #define CONDUIT_FLAG_BCAST    (1<<1) /* this conduit can broadcast messages */
 #define CONDUIT_FLAG_VIRTUAL  (1<<2) /* for things like tree of life */

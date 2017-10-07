@@ -1,6 +1,7 @@
 MODULES   += dcmd
 MODULES   += null
 MODULES   += udp
+MODULES   += udpd
 MODULES   += treeoflife
 MODULES   += web
 
