@@ -205,6 +205,11 @@ static int module_init(void)
     goto out;
   }
 
+  udp_rxsz_set(g_mod->us, EVER_OUTWARD_MBE_LENGTH * 2); /* MTU 1500 max */
+  udp_rxbuf_presz_set(g_mod->us, EVER_OUTWARD_MBE_POS);
+
+  udp_sockbuf_set(g_mod->us, 24000);
+
   conduits_register( &g_mod->conduit
                    , everip_conduits()
                    , CONDUIT_FLAG_NONE
