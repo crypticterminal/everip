@@ -192,6 +192,7 @@ out:
 
 struct magi;
 struct magi_node;
+struct magi_e2e_event;
 struct magi_eventdriver;
 struct magi_eventdriver_handler;
 
@@ -251,6 +252,8 @@ enum MAGI_MELCHIOR_RETURN_STATUS {
    , MAGI_MELCHIOR_RETURN_STATUS_TIMEDOUT
 };
 
+typedef bool (magi_node_apply_h)(const struct magi_e2e_event *event, void *arg);
+
 typedef int (magi_eventdriver_h)(enum MAGI_EVENTDRIVER_WATCH type, void *data, void *arg);
 
 typedef void (magi_melchior_h)( enum MAGI_MELCHIOR_RETURN_STATUS status
@@ -274,6 +277,7 @@ struct magi_melchior_rpc {
 };
 
 struct magi_e2e_event {
+  struct magi *magi;
   enum MAGI_NODE_STATUS status;
   const uint8_t *everip_addr;
 };
@@ -305,6 +309,8 @@ int magi_node_ledbat_recv( struct magi_node *mnode, struct mbuf *mb );
 
 int magi_node_everipaddr_copy( struct magi_node *mnode
                              , uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
+
+int magi_node_apply( struct magi *magi, magi_node_apply_h *fn , void *arg);
 
 struct magi_node *
 magi_node_lookup_by_eipaddr( struct magi *magi

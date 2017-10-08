@@ -282,6 +282,28 @@ static void magi_node_destructor(void *data)
   mnode->mb = mem_deref(mnode->mb);
 }
 
+int magi_node_apply( struct magi *magi, magi_node_apply_h *fn, void *arg)
+{
+  struct le *le;
+  struct magi_node *mnode;
+  struct magi_e2e_event event;
+
+  if (!magi || !fn)
+    return EINVAL;
+
+  LIST_FOREACH(&magi->nodes, le) {
+    mnode = le->data;
+    memset(&event, 0, sizeof(event));
+    event.magi = mnode->ctx;
+    event.status = mnode->status;
+    event.everip_addr = mnode->everip_addr;
+    if (fn(&event, arg))
+      break;
+  }
+
+  return 0;
+}
+
 struct magi_node *
 magi_node_lookup_by_eipaddr( struct magi *magi
                            , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] )
@@ -316,6 +338,7 @@ int magi_node_status_update( struct magi_node *mnode
 
   mnode->status = status;
 
+  event.magi = mnode->ctx;
   event.status = mnode->status;
   event.everip_addr = mnode->everip_addr;
 
