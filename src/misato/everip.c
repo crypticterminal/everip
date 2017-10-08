@@ -571,7 +571,7 @@ skip_tun:
   /* conduits*/
   module_preload("null");
   module_preload("udp");
-  /*module_preload("eth");*/
+  module_preload("udpd");
   module_preload("web");
 
   /* virtual */
