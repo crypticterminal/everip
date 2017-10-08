@@ -395,7 +395,7 @@ static void ledbat_timer(void *data)
   struct ledbat *ledbat = data;
   utp_check_timeouts(ledbat->utp);
   utp_issue_deferred_acks(ledbat->utp);
-  tmr_start(&ledbat->tmr, 500, ledbat_timer, ledbat);
+  tmr_start(&ledbat->tmr, 300, ledbat_timer, ledbat);
 }
 
 int ledbat_sock_connect( struct ledbat_sock *lsock
@@ -407,7 +407,7 @@ int ledbat_sock_connect( struct ledbat_sock *lsock
   sa_init(&lsock->laddr, AF_INET6);
   sa_set_in6(&lsock->laddr, everip_addr, 0);
 
-  utp_issue_deferred_acks(lsock->ctx->utp);
+  /*utp_issue_deferred_acks(lsock->ctx->utp);*/
 
   for (int i = 0; i < (int)LEDBAT_BUF_LIMIT; ++i) {
     lsock->bufs[i] = mem_deref( lsock->bufs[i] );
