@@ -24,6 +24,16 @@ static struct this_module *g_mod = NULL;
 
 /**/
 
+uint16_t tol_get_childid(struct this_module *mod)
+{
+  uint16_t out;
+  out = mod->child_counter;
+  mod->child_counter = ++mod->child_counter % 127; /* lock to 127 for now */
+  return out;
+}
+
+/**/
+
 struct tol_neighbor *
 tol_neighbor_find_byeverip( struct this_module *mod
                           , const uint8_t everip[EVERIP_ADDRESS_LENGTH] )
@@ -129,6 +139,8 @@ static void tol_maintain_tmr_cb(void *data)
 
 static void tol_maintain_children_tmr_cb(void *data)
 {
+  struct le *le;
+  struct tol_neighbor *tn;
   uint32_t child_count = 0;
   struct tol_zone *zone = NULL;
   struct this_module *mod = data;
@@ -146,6 +158,10 @@ static void tol_maintain_children_tmr_cb(void *data)
           , i);
       zone->child_refresh_count = child_count;
       /* do child push */
+      LIST_FOREACH(&zone->children, le) {
+        tn = le->data;
+        tol_command_send_child(tn, i);
+      }
     }
   }
 

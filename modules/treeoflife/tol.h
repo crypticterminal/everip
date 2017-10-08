@@ -34,6 +34,7 @@ struct tol_neighbor {
     uint8_t binlen;
     uint8_t binrep[TOL_ROUTE_LENGTH];
     uint16_t child_id;
+    bool child_id_chosen;
     struct le le_child;
   } z[TOL_ZONE_COUNT];
 };
@@ -82,9 +83,17 @@ int tol_command_callback( struct magi_melchior_rpc *rpc
                         , struct pl *method
                         , void *arg );
 
+int tol_command_send_child( struct tol_neighbor *tn
+                          , uint8_t zoneid );
+
+int tol_command_cb_child( struct this_module *mod
+                        , struct magi_melchior_rpc *rpc );
+
 int tol_command_send_zone( struct this_module *mod
                          , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
 
+int tol_command_cb_zone( struct this_module *mod
+                       , struct magi_melchior_rpc *rpc );
 
 /**/
 
@@ -97,4 +106,6 @@ int tol_neighbor_alloc( struct tol_neighbor **tnp
                       , const uint8_t everip[EVERIP_ADDRESS_LENGTH] );
 
 /**/
+
+uint16_t tol_get_childid(struct this_module *mod);
 
