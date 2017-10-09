@@ -71,7 +71,11 @@ static int tol_dhti_add_or_update( struct tol_zone *zone
   memcpy(dhti->binrep, binrep, TOL_ROUTE_LENGTH);
 
   /* update timer here */
+#if 0
   tmr_start(&dhti->tmr, TOL_DHT_TIMEOUT_MS, tol_dhti_tmr_cb, dhti);
+#else
+  (void)tol_dhti_tmr_cb;
+#endif
 
 out:
   return err;
