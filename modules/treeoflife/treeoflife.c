@@ -53,15 +53,16 @@ static void tol_neighbor_destructor(void *data)
   struct tol_neighbor *tn = data;
   struct this_module *mod = container_of(tn->le_mod.list, struct this_module, all_neighbors);
 
+  list_unlink(&tn->le_mod);
+
   for (int i = 0; i < TOL_ZONE_COUNT; ++i)
   {
     if (mod && mod->zone[i].parent == tn) {
       tol_zone_reset(mod, &mod->zone[i]);
     }
     list_unlink(&tn->z[i].le_child);
-  }    
+  }
 
-  list_unlink(&tn->le_mod);
 }
 
 int tol_neighbor_alloc( struct tol_neighbor **tnp
@@ -172,11 +173,43 @@ static void tol_maintain_children_tmr_cb(void *data)
            );
 }
 
+static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
+                               , void *data
+                               , void *arg )
+{
+  struct tol_neighbor *tn = NULL;
+  struct magi_e2e_event *event = data;
+  struct this_module *mod = arg;
+
+  if (!mod || !event || type != MAGI_EVENTDRIVER_WATCH_E2E)
+    return 0;
+
+  tn = tol_neighbor_find_byeverip(mod, event->everip_addr);
+
+  switch (event->status) {
+    case MAGI_NODE_STATUS_REMOVAL:
+    case MAGI_NODE_STATUS_OFFLINE:
+      error("TREEOFLIFE: node [%W] has gone offline!\n", event->everip_addr, EVERIP_ADDRESS_LENGTH);
+      tn = mem_deref(tn);
+      break;
+//    case MAGI_NODE_STATUS_OPERATIONAL:
+//      error("TREEOFLIFE: node [%W] is now operational!\n", event->everip_addr, EVERIP_ADDRESS_LENGTH);
+//      break;
+    default:
+      break;
+  }
+
+out:
+  return 0;
+}
+
 int tol_zone_reset(struct this_module *mod, struct tol_zone *zone)
 {
   uint16_t neighbor_count = 0;
 
-  if (!zone)
+  error("[TREE] tol_zone_reset\n");
+
+  if (!mod || !zone)
     return EINVAL;
 
   /* first two bytes represent number of connected nodes in big endian */
@@ -233,6 +266,15 @@ static int module_init(void)
                               , g_mod );
   if (err) {
     error("treeoflife: magi_melchior_register\n");
+    goto out;
+  }
+
+  err = magi_eventdriver_handler_register( everip_eventdriver()
+                                         , MAGI_EVENTDRIVER_WATCH_E2E
+                                         , magi_event_watcher_h
+                                         , g_mod );
+  if (err) {
+    error("treeoflife: magi_eventdriver_handler_register\n");
     goto out;
   }
 
