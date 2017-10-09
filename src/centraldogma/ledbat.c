@@ -170,6 +170,11 @@ struct ledbat {
 
 #define LEDBAT_BUF_LIMIT 32U
 
+struct ledbat_buf {
+  struct le le;
+  struct mbuf *mb;
+};
+
 struct ledbat_sock {
   struct le le;
   struct sa laddr;
@@ -180,9 +185,9 @@ struct ledbat_sock {
   ledbat_callback_t *callback;
   void *callback_arg;
 
-  struct mbuf *bufs[LEDBAT_BUF_LIMIT];
-  uint8_t iovec_pos;
-  uint8_t iovec_count;
+  /*struct mbuf *bufs[LEDBAT_BUF_LIMIT];*/
+
+  struct list bufs; /* struct ledbat_buf */
 
 };
 
@@ -190,11 +195,46 @@ static int _ledbat_sock_alloc( struct ledbat_sock **lsockp
                              , struct ledbat *l
                              , utp_socket *socket );
 
+
+static void ledbat_buf_destructor(void *data)
+{
+  struct ledbat_buf *lb = data;
+  lb->mb = mem_deref( lb->mb );
+  list_unlink( &lb->le );
+}
+
+static
+int ledbat_buf_alloc( struct ledbat_buf **lbp
+                    , struct ledbat_sock *lsock
+                    , struct mbuf *mb )
+{
+  int err = 0;
+  struct ledbat_buf *lb = NULL;
+
+  if (!lbp || !lsock || !mb)
+    return EINVAL;
+
+  lb = mem_zalloc(sizeof(*lb), ledbat_buf_destructor);
+  if (!lb)
+    return ENOMEM;
+
+  lb->mb = mb;
+  mem_ref(lb->mb);
+
+  list_append(&lsock->bufs, &lb->le, lb);
+
+  if (err) {
+    lb = mem_deref(lb);
+  } else {
+    *lbp = lb;
+  }
+  return err;
+}
+
 static int _ledbat_sock_write(struct ledbat_sock *lsock)
 {
   size_t sent;
-  size_t limit;
-  struct mbuf *mb;
+  struct ledbat_buf *lb;
 
   if (!lsock)
     return EINVAL;
@@ -202,51 +242,37 @@ static int _ledbat_sock_write(struct ledbat_sock *lsock)
   if (!lsock->sock)
     return ENOTCONN;
 
-  if (!lsock->iovec_count)
-    goto out;
+  while (list_head(&lsock->bufs)) {
+    lb = list_head(&lsock->bufs)->data;
 
-  limit = lsock->iovec_pos + lsock->iovec_count;
-
-  for (size_t i = lsock->iovec_pos; i < limit; ++i)
-  {
-    mb = lsock->bufs[i % LEDBAT_BUF_LIMIT];
-    if (!mb)
-      continue;
-
-again:
-    sent = utp_write(lsock->sock, mbuf_buf(mb), mbuf_get_left(mb));
+/*again:*/
+    sent = utp_write(lsock->sock, mbuf_buf(lb->mb), mbuf_get_left(lb->mb));
     if (sent <= 0) {
       debug("socket no longer writable\n");
       break;
     }
 
-    mbuf_advance(mb, sent);
+    mbuf_advance(lb->mb, sent);
 
-    if (0 == mbuf_get_left(mb)) {
-      ++lsock->iovec_pos;
-      lsock->iovec_pos = lsock->iovec_pos % LEDBAT_BUF_LIMIT;
-      lsock->iovec_count--;
-      lsock->bufs[i % LEDBAT_BUF_LIMIT] = mem_deref(mb);
+    if (0 == mbuf_get_left(lb->mb)) {
+      lb = mem_deref( lb );
       continue;
     } else { /* full? */
-      goto again;
+      break;
     }
   }
-out:
+
   return 0;
 }
 
 int ledbat_sock_send(struct ledbat_sock *lsock, struct mbuf *mb)
 {
+  struct ledbat_buf *lb = NULL;
+
   if (!lsock || !mb)
     return EINVAL;
 
-  if (lsock->iovec_count >= LEDBAT_BUF_LIMIT)
-    return EOVERFLOW;
-
-  mem_ref(mb);
-  lsock->bufs[(lsock->iovec_pos + lsock->iovec_count) % LEDBAT_BUF_LIMIT] = mb;
-  lsock->iovec_count++;
+  ledbat_buf_alloc(&lb, lsock, mb);
 
   /* attempt to write-out */
   _ledbat_sock_write(lsock);
@@ -346,9 +372,7 @@ static uint64_t callback_on_state_change(utp_callback_arguments *a)
       lsock = utp_get_userdata(a->socket);
       if (!lsock)
         break;
-      for (int i = 0; i < (int)LEDBAT_BUF_LIMIT; ++i) {
-        lsock->bufs[i] = mem_deref( lsock->bufs[i] );
-      }
+      list_flush( &lsock->bufs );
       break;
 
     case UTP_STATE_DESTROYING:
@@ -379,6 +403,7 @@ static uint64_t callback_on_read(utp_callback_arguments *a)
 {
   _handle_outside_cb(a);
 
+  utp_issue_deferred_acks(a->context);
   utp_read_drained(a->socket);
   return 0;
 }
@@ -407,11 +432,9 @@ int ledbat_sock_connect( struct ledbat_sock *lsock
   sa_init(&lsock->laddr, AF_INET6);
   sa_set_in6(&lsock->laddr, everip_addr, 0);
 
-  /*utp_issue_deferred_acks(lsock->ctx->utp);*/
+  utp_issue_deferred_acks(lsock->ctx->utp);
 
-  for (int i = 0; i < (int)LEDBAT_BUF_LIMIT; ++i) {
-    lsock->bufs[i] = mem_deref( lsock->bufs[i] );
-  }
+  list_flush( &lsock->bufs );
 
   if (utp_connect( lsock->sock
                  , (const struct sockaddr *)&lsock->laddr.u.in6
@@ -437,9 +460,7 @@ int ledbat_sock_reconnect( struct ledbat_sock *lsock )
 
   utp_set_userdata(lsock->sock, lsock);
 
-  for (int i = 0; i < (int)LEDBAT_BUF_LIMIT; ++i) {
-    lsock->bufs[i] = mem_deref( lsock->bufs[i] );
-  }
+  list_flush( &lsock->bufs );
 
   if (utp_connect( lsock->sock
                  , (const struct sockaddr *)&lsock->laddr.u.in6
@@ -496,9 +517,9 @@ static void ledbat_sock_destructor(void *data)
   utp_set_userdata(lsock->sock, NULL);
   utp_close( lsock->sock );
   list_unlink( &lsock->le );
-  for (int i = 0; i < (int)LEDBAT_BUF_LIMIT; ++i) {
-    lsock->bufs[i] = mem_deref( lsock->bufs[i] );
-  }
+
+  list_flush( &lsock->bufs );
+
 }
 
 
