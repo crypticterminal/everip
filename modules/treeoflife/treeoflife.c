@@ -56,7 +56,7 @@ static void tol_neighbor_destructor(void *data)
   for (int i = 0; i < TOL_ZONE_COUNT; ++i)
   {
     if (mod && mod->zone[i].parent == tn) {
-      mod->zone[i].parent = NULL;
+      tol_zone_reset(mod, &mod->zone[i]);
     }
     list_unlink(&tn->z[i].le_child);
   }    
@@ -172,6 +172,28 @@ static void tol_maintain_children_tmr_cb(void *data)
            );
 }
 
+int tol_zone_reset(struct this_module *mod, struct tol_zone *zone)
+{
+  uint16_t neighbor_count = 0;
+
+  if (!zone)
+    return EINVAL;
+
+  /* first two bytes represent number of connected nodes in big endian */
+  neighbor_count = (uint16_t)list_count(&mod->all_neighbors);
+  neighbor_count = arch_htobe16(neighbor_count);
+  memcpy(zone->root, &neighbor_count, 2);
+  memcpy(zone->root+2, mod->my_everip+2, EVERIP_ADDRESS_LENGTH-2);
+  zone->binlen = 1;
+  memset(zone->binrep, 0, TOL_ROUTE_LENGTH);
+
+  zone->parent = NULL;
+
+  list_clear(&zone->children);
+
+  return 0;
+}
+
 static void module_destructor(void *data)
 {
   struct this_module *mod = data;
@@ -201,9 +223,7 @@ static int module_init(void)
 
   for (int i = 0; i < TOL_ZONE_COUNT; ++i)
   {
-    memcpy(g_mod->zone[i].root, g_mod->my_everip, EVERIP_ADDRESS_LENGTH);
-    g_mod->zone[i].binlen = 1;
-    memset(g_mod->zone[i].binrep, 0, TOL_ROUTE_LENGTH);
+    (void)tol_zone_reset(g_mod, &g_mod->zone[i]);
   }
 
   /* register with the system */

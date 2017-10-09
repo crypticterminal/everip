@@ -109,3 +109,5 @@ int tol_neighbor_alloc( struct tol_neighbor **tnp
 
 uint16_t tol_get_childid(struct this_module *mod);
 
+int tol_zone_reset(struct this_module *mod, struct tol_zone *zone);
+
