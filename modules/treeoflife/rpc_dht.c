@@ -344,7 +344,7 @@ int tol_command_cb_dht( struct this_module *mod
     goto out;
   }
 
-  debug("[TREE][DHT] %r\n", &ode->u.pl);
+  info("[TREE][DHT] %r\n", &ode->u.pl);
 
   /* mode switch */
   switch (ode->u.pl.l) {
@@ -415,10 +415,6 @@ int tol_command_cb_dht( struct this_module *mod
 
         tmp_fbl = (uint16_t)ode->u.integer;
 
-
-#if 0
-/* X:MEMO ignore caching for now */
-
         /* search for entry, and if found -- update */
         err = tol_dhti_add_or_update( zone
                                     , tmp_everip_record
@@ -427,7 +423,6 @@ int tol_command_cb_dht( struct this_module *mod
                                     , tmp_bl );
         if (err)
           goto out;
-#endif
 
         /* forward */
 
@@ -435,6 +430,13 @@ int tol_command_cb_dht( struct this_module *mod
                                 , tmp_fbr
                                 , everip_addr_route ))
           goto out;
+
+        if (!memcmp( rpc->everip_addr
+                   , everip_addr_route
+                   , EVERIP_ADDRESS_LENGTH)) {
+          /* we already came from there! */
+          goto out;
+        }
 
         tol_command_send_dht_found( everip_addr_route
                                   , tmp_everip_record
@@ -506,12 +508,8 @@ int tol_command_cb_dht( struct this_module *mod
 
         /* forward! */
         {
-          /*struct le *le;
-          struct tol_neighbor *tn = NULL;*/
-
           if (zone->parent) {
             /* easy path */
-
             if (!memcmp( zone->parent->everip
                        , rpc->everip_addr
                        , EVERIP_ADDRESS_LENGTH)) {
@@ -526,28 +524,6 @@ int tol_command_cb_dht( struct this_module *mod
                                              , tmp_rootp
                                              , tmp_br
                                              , tmp_bl );
-          }
-          else
-          {
-#if 0
-            /* no parent, we shelve off to all local peers */
-            LIST_FOREACH(&zone->nodes_all, le) {
-              tn = le->data;
-
-              if (!memcmp( tn->everip
-                         , rpc->everip_addr
-                         , EVERIP_ADDRESS_LENGTH)) {
-                continue;
-              }
-              (void)tol_command_send_dht_notify( peer->cp.everip_addr
-                                               , tmp_everip_record
-                                               , tmp_pubkey
-                                               , tmp_zoneid
-                                               , tmp_rootp
-                                               , tmp_br
-                                               , tmp_bl );
-            }
-#endif
           }
         }
 
@@ -606,6 +582,10 @@ int tol_command_cb_dht( struct this_module *mod
             goto out;
           }
 
+          if (zone->parent) { /* only if we do not have parent */
+            goto aquire_continue;
+          }
+
           LIST_FOREACH(&zone->dhti_all, le) {
             dhti = le->data;
             /* if we have record, send it back */
@@ -632,6 +612,8 @@ int tol_command_cb_dht( struct this_module *mod
             }
           }
         }
+
+aquire_continue:
 
         /*error("DHT AQUIRE!!!\n");*/
 

@@ -56,6 +56,11 @@ int tol_command_send_child( struct tol_neighbor *tn
 
   odict_entry_add( od, "zoneid", ODICT_INT, (int64_t)zoneid);
 
+  odict_entry_add( od
+                 , "root"
+                 , ODICT_STRING
+                 , &(struct pl){ .p=(const char *)mod->zone[0].root
+                               , .l=EVERIP_ADDRESS_LENGTH});
   /* parent */
   odict_entry_add( od
                  , "parent_br"
@@ -105,6 +110,7 @@ int tol_command_cb_child( struct this_module *mod
   struct tol_neighbor *tn = NULL;
   struct tol_zone *zone = NULL;
 
+  uint8_t *tmp_rootp;
   uint16_t tmp_zoneid;
   uint8_t *tmp_parent_br;
   uint16_t tmp_parent_bl;
@@ -149,6 +155,25 @@ int tol_command_cb_child( struct this_module *mod
   /* check that we actually recieved this message from our parrent */
   if (zone->parent != tn)
     return EPROTO;
+
+  ode = odict_lookup(rpc->in, "root");
+  if (!ode || ode->type != ODICT_STRING) {
+    err = EPROTO;
+    goto out;
+  }
+
+  /* root must be same as everip address */
+  if (ode->u.pl.l != EVERIP_ADDRESS_LENGTH) {
+    err = EPROTO;
+    goto out;
+  } 
+
+  tmp_rootp = (uint8_t *)ode->u.pl.p;
+  if (memcmp(zone->root, tmp_rootp, EVERIP_ADDRESS_LENGTH)) {
+    error("[TREE] child information from invalid root\n");
+    err = EPROTO;
+    goto out;
+  }
 
   ode = odict_lookup(rpc->in, "parent_br");
   if (!ode || ode->type != ODICT_STRING) {
@@ -201,6 +226,8 @@ int tol_command_cb_child( struct this_module *mod
   info("MY BINREP[%H]\n", stack_debug, tmp_child_br);
   zone->binlen = tmp_child_bl;
   memcpy(zone->binrep, tmp_child_br, TOL_ROUTE_LENGTH);
+
+  zone->active = true;
 
   /* notify children, if we have any! */
   {

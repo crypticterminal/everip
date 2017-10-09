@@ -15,11 +15,13 @@
  *
  */
 
+#define TOL_VERSION_ID 1U
+
 #define TOL_ZONE_COUNT 1
 #define TOL_ROUTE_LENGTH 16 /* 128 bytes */
 
-#define TOL_MAINTAIN_MS 5000
-#define TOL_MAINTAIN_CHILDREN_MS 5000
+#define TOL_MAINTAIN_MS 3000
+#define TOL_MAINTAIN_CHILDREN_MS 3000
 #define TOL_DHT_TIMEOUT_MS 15000
 
 struct tol_peer;
@@ -49,24 +51,25 @@ struct tol_neighbor {
   } z[TOL_ZONE_COUNT];
 };
 
-#if 0
+
 struct tol_peer {
   struct conduit_peer cp;
-
   struct this_module *ctx;
 
-  struct le le_peer;
-  struct le le_zone[TOL_ZONE_COUNT];
-  struct le le_idx_addr;
+  uint8_t zoneid;
+  uint8_t binlen;
+  uint8_t binrep[TOL_ROUTE_LENGTH];
+
+  struct le le_mod;
+  struct le le_mod_addr;
 };
-#endif
 
 struct tol_zone {
+  bool active;
   uint8_t root[EVERIP_ADDRESS_LENGTH];
   struct tol_neighbor *parent;
 
   uint8_t binlen;
-  uint8_t binlen_calc;
   uint8_t binrep[TOL_ROUTE_LENGTH];
 
   struct list children;
@@ -76,7 +79,6 @@ struct tol_zone {
 };
 
 struct this_module {
-  struct conduit *conduit;
   struct tmr tmr_maintain;
   struct tmr tmr_maintain_children;
 
@@ -89,7 +91,35 @@ struct this_module {
 
   struct list all_neighbors;
 
+
+  /* conduit stuff */
+  struct conduit *conduit;
+  struct list peers;
+  struct hash *peers_addr;
+
 };
+
+/**/
+
+struct tol_peer *tol_peer_lookup_byeverip( struct this_module *mod
+                                         , const uint8_t everip[EVERIP_ADDRESS_LENGTH] );
+
+int tol_peer_alloc( struct tol_peer **tpp
+                  , struct this_module *mod
+                  , const uint8_t everip[EVERIP_ADDRESS_LENGTH] );
+
+/**/
+
+int tol_conduit_debug(struct re_printf *pf, void *arg);
+
+int tol_conduit_search( const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
+                      , void *arg );
+
+int tol_conduit_sendto_virtual( struct conduit_peer *peer
+                              , struct mbuf *mb
+                              , void *arg );
+
+int tol_conduit_incoming( struct this_module *mod, struct mbuf *mb );
 
 /**/
 

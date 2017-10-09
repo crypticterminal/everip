@@ -41,26 +41,35 @@ int tol_everip_for_route( struct this_module *mod
   for (int i = 0; i < ZONE_COUNT; ++i) {
     zone = &mod->zone[i];
 
+    if (!zone->active) {
+      error( "[TREE] tol_everip_for_route :: zone not active!\n");
+      continue;
+    }
+
+    info("SEARCHING FOR [%H]\n", stack_debug, route);
+
     local_diff = stack_linf_diff(route, zone->binrep, &places);
 
-    debug("LOCAL DIFF = %d[PLACES=%d]\n", local_diff, places);
+    info("LOCAL DIFF[%H] = %d[PLACES=%d]\n", stack_debug, zone->binrep, local_diff, places);
 
     LIST_FOREACH(&mod->all_neighbors, le) {
       tn = le->data;
-      debug( "TRYING NODE [%W]{%H}[%u]\n"
+      info( "TRYING NODE [%W]{%H}[%u]\n"
            , tn->everip, EVERIP_ADDRESS_LENGTH
            , stack_debug, tn->z[i].binrep
            , tn->z[i].binlen);
-      if (!tn->z[i].binlen)
+      if (!tn->z[i].binlen) {
+        info("[TREE] SKIP SKIP\n");
         continue;
+      }
       temp_diff = stack_linf_diff(route, tn->z[i].binrep, &places);
       if (temp_diff == 0 && !memcmp(route, tn->z[i].binrep, TOL_ROUTE_LENGTH)) {
         memcpy(everip_addr, tn->everip, EVERIP_ADDRESS_LENGTH);
         return 0;
       }
-      debug("TEMP DIFF = %d[PLACES=%d]\n", temp_diff, places);
+      info("TEMP DIFF = %d[PLACES=%d]\n", temp_diff, places);
       if (temp_diff < local_diff) {
-        if (!tn_chosen || temp_diff < chosen_diff) {
+        if (!tn_chosen || (temp_diff + 1) < chosen_diff) {
           tn_chosen = tn;
           chosen_diff = temp_diff;
         }
@@ -69,7 +78,8 @@ int tol_everip_for_route( struct this_module *mod
   }
 
   if (tn_chosen) {
-    memcpy(everip_addr, tn->everip, EVERIP_ADDRESS_LENGTH);
+    info("I CHOSE [%H][%W]\n", stack_debug, tn_chosen->z[0].binrep, tn_chosen->everip, EVERIP_ADDRESS_LENGTH);
+    memcpy(everip_addr, tn_chosen->everip, EVERIP_ADDRESS_LENGTH);
     return 0;
   }
 
@@ -77,6 +87,14 @@ int tol_everip_for_route( struct this_module *mod
 }
 
 /**/
+
+int treeoflife_ledbat_recv( struct mbuf *mb )
+{
+  /* trampoline */
+  if (!g_mod)
+    return 0;
+  return tol_conduit_incoming(g_mod, mb);
+}
 
 uint16_t tol_get_childid(struct this_module *mod)
 {
@@ -143,7 +161,6 @@ int tol_neighbor_alloc( struct tol_neighbor **tnp
 
   list_append(&mod->all_neighbors, &tn->le_mod, tn);
 
-out:
   if (err) {
     tn = mem_deref(tn);
   } else {
@@ -157,12 +174,17 @@ out:
 static bool tol_magi_node_apply_h(const struct magi_e2e_event *event, void *arg)
 {
   struct this_module *mod = arg;
-  error("[TREE] magi_node_apply_h\n");
+  /*error("[TREE] magi_node_apply_h\n");*/
 
   if (event->status != MAGI_NODE_STATUS_OPERATIONAL)
     goto out;
 
-  /* check if we have a conduit peer here... */
+  /*
+   * check if we have a conduit peer here... 
+   * and if we do, cut out
+   */
+  if (tol_peer_lookup_byeverip(mod, event->everip_addr))
+    goto out;
 
   tol_command_send_zone(mod, event->everip_addr);
 
@@ -176,7 +198,7 @@ static void tol_maintain_tmr_cb(void *data)
 
   /*treeoflife_command_send_zone(tol_c, peer->cp.everip_addr);*/
 
-  error("[TREE] tol_maintain_tmr_cb\n");
+  /*error("[TREE] tol_maintain_tmr_cb\n");*/
 
   /*
    * get list from magi, but only actually send to nodes
@@ -200,7 +222,7 @@ static void tol_maintain_children_tmr_cb(void *data)
   struct tol_zone *zone = NULL;
   struct this_module *mod = data;
 
-  error("[TREE] tol_maintain_children_tmr_cb\n");
+  /*error("[TREE] tol_maintain_children_tmr_cb\n");*/
 
   for (int i = 0; i < TOL_ZONE_COUNT; ++i)
   {
@@ -239,12 +261,14 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
     return 0;
 
   tn = tol_neighbor_find_byeverip(mod, event->everip_addr);
+  /*peer = tol_peer_lookup_byeverip(mod, event->everip_addr);*/
 
   switch (event->status) {
     case MAGI_NODE_STATUS_REMOVAL:
     case MAGI_NODE_STATUS_OFFLINE:
       error("TREEOFLIFE: node [%W] has gone offline!\n", event->everip_addr, EVERIP_ADDRESS_LENGTH);
       tn = mem_deref(tn);
+      /*peer = mem_deref(peer);*/
       break;
 //    case MAGI_NODE_STATUS_OPERATIONAL:
 //      error("TREEOFLIFE: node [%W] is now operational!\n", event->everip_addr, EVERIP_ADDRESS_LENGTH);
@@ -253,7 +277,6 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
       break;
   }
 
-out:
   return 0;
 }
 
@@ -269,14 +292,18 @@ int tol_zone_reset(struct this_module *mod, struct tol_zone *zone)
   /* first two bytes represent number of connected nodes in big endian */
   neighbor_count = (uint16_t)list_count(&mod->all_neighbors);
   neighbor_count = arch_htobe16(neighbor_count);
+  memcpy(zone->root, mod->my_everip, EVERIP_ADDRESS_LENGTH);
   memcpy(zone->root, &neighbor_count, 2);
-  memcpy(zone->root+2, mod->my_everip+2, EVERIP_ADDRESS_LENGTH-2);
   zone->binlen = 1;
   memset(zone->binrep, 0, TOL_ROUTE_LENGTH);
 
   zone->parent = NULL;
 
   list_clear(&zone->children);
+  list_flush(&mod->peers);
+  list_flush(&zone->dhti_all);
+
+  zone->active = true;
 
   return 0;
 }
@@ -287,7 +314,10 @@ static void module_destructor(void *data)
 
   list_flush(&mod->all_neighbors);
 
-  g_mod->conduit = mem_deref( g_mod->conduit );
+  mod->conduit = mem_deref( mod->conduit );
+
+  hash_flush(mod->peers_addr);
+  mod->peers_addr = mem_deref( g_mod->peers_addr );
 
   tmr_cancel(&mod->tmr_maintain);
   tmr_cancel(&mod->tmr_maintain_children);
@@ -313,6 +343,8 @@ static int module_init(void)
     (void)tol_zone_reset(g_mod, &g_mod->zone[i]);
   }
 
+  hash_alloc(&g_mod->peers_addr, 16);
+
   /* register with the system */
   err = magi_melchior_register( everip_magi_melchior()
                               , (void *)"tree"
@@ -332,7 +364,6 @@ static int module_init(void)
     goto out;
   }
 
-#if 0
   conduits_register( &g_mod->conduit
                    , everip_conduits()
                    , CONDUIT_FLAG_VIRTUAL | CONDUIT_FLAG_SECONDARY
@@ -345,12 +376,19 @@ static int module_init(void)
     goto out;
   }
 
+  conduit_register_debug_handler( g_mod->conduit
+                                , tol_conduit_debug
+                                , g_mod );
+
   conduit_register_search_handler( g_mod->conduit
-                                 , _conduit_search
+                                 , tol_conduit_search
                                  , g_mod );
 
+  conduit_register_send_handler( g_mod->conduit
+                               , tol_conduit_sendto_virtual
+                               , g_mod);
+
   mem_ref( g_mod->conduit );
-#endif
 
   /* timer for maintain */
 

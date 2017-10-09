@@ -37,26 +37,15 @@ static bool _are_you_my_parent( struct tol_zone *zone
 
 /* call-out */
 
-static void _tol_cb_command_zone( enum MAGI_MELCHIOR_RETURN_STATUS status
-                                       , struct odict *od_sent
-                                       , struct odict *od_recv
-                                       , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]
-                                       , uint64_t timediff
-                                       , void *userdata )
-{
-
-  if (status != MAGI_MELCHIOR_RETURN_STATUS_OK) {
-    error("[TREE] _treeoflife_command_zone_cb\n");
-    return; /* ignore for now */
-  }
-
-}
 
 int tol_command_send_zone( struct this_module *mod
                          , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] )
 {
   int err = 0;
   struct odict *od = NULL;
+  struct tol_zone *zone = NULL;
+
+  zone = &mod->zone[0];
 
   odict_alloc(&od, 8);
 
@@ -87,10 +76,10 @@ int tol_command_send_zone( struct this_module *mod
                           , od
                           , &(struct pl)PL("tree.zone")
                           , everip_addr
-                          , 5000
+                          , 1
                           , false /* is not routable */
-                          , _tol_cb_command_zone
-                          , mod );
+                          , NULL
+                          , NULL );
 
   od = mem_deref(od);
 
@@ -173,19 +162,25 @@ int tol_command_cb_zone( struct this_module *mod
     goto out;
 
   /*tn->z[tmp_zoneid]*/
+
+  list_unlink(&tn->z[tmp_zoneid].le_child);
   
   if (_are_you_my_parent(zone, tmp_rootp, rpc->everip_addr, tmp_binlen))
   {
     zone->parent = tn;
-    zone->binlen_calc = tmp_binlen + 1;
+    zone->binlen = tmp_binlen + 1;
+    memset(zone->binrep, 0, TOL_ROUTE_LENGTH);
     memcpy(zone->root, tmp_rootp, EVERIP_ADDRESS_LENGTH);
     error("[TREE] I AM CHILD of %W!\n", tn->everip, EVERIP_ADDRESS_LENGTH);
-  }
-
-  list_unlink(&tn->z[tmp_zoneid].le_child);
-  if (!memcmp(mod->my_everip, tmp_parentp, EVERIP_ADDRESS_LENGTH)) {
-    list_append(&zone->children, &tn->z[tmp_zoneid].le_child, tn);
-    error("[TREE] I AM PARENT of %W!\n", tn->everip, EVERIP_ADDRESS_LENGTH);
+    list_flush(&mod->peers);
+    list_flush(&zone->dhti_all); /* X:TODO change this to an event system */
+    zone->active = false;
+  } else {
+    if ( zone->parent != tn
+      && !memcmp(mod->my_everip, tmp_parentp, EVERIP_ADDRESS_LENGTH)) {
+      list_append(&zone->children, &tn->z[tmp_zoneid].le_child, tn);
+      error("[TREE] I AM PARENT of %W!\n", tn->everip, EVERIP_ADDRESS_LENGTH);
+    }
   }
 
 #if 0
