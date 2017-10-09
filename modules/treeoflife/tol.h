@@ -107,6 +107,10 @@ int tol_neighbor_alloc( struct tol_neighbor **tnp
 
 /**/
 
+int tol_everip_for_route( struct this_module *mod
+                        , const uint8_t route[TOL_ROUTE_LENGTH]
+                        , uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]);
+
 uint16_t tol_get_childid(struct this_module *mod);
 
 int tol_zone_reset(struct this_module *mod, struct tol_zone *zone);

@@ -24,6 +24,60 @@ static struct this_module *g_mod = NULL;
 
 /**/
 
+int tol_everip_for_route( struct this_module *mod
+                        , const uint8_t route[TOL_ROUTE_LENGTH]
+                        , uint8_t everip_addr[EVERIP_ADDRESS_LENGTH])
+{
+  int places;
+  struct le *le;
+  struct tol_zone *zone;
+  struct tol_neighbor *tn = NULL;
+  struct tol_neighbor *tn_chosen = NULL;
+
+  int local_diff = 0;
+  int temp_diff = 0;
+  int chosen_diff = 0;
+
+  for (int i = 0; i < ZONE_COUNT; ++i) {
+    zone = &mod->zone[i];
+
+    local_diff = stack_linf_diff(route, zone->binrep, &places);
+
+    debug("LOCAL DIFF = %d[PLACES=%d]\n", local_diff, places);
+
+    LIST_FOREACH(&mod->all_neighbors, le) {
+      tn = le->data;
+      debug( "TRYING NODE [%W]{%H}[%u]\n"
+           , tn->everip, EVERIP_ADDRESS_LENGTH
+           , stack_debug, tn->z[i].binrep
+           , tn->z[i].binlen);
+      if (!tn->z[i].binlen)
+        continue;
+      temp_diff = stack_linf_diff(route, tn->z[i].binrep, &places);
+      if (temp_diff == 0 && !memcmp(route, tn->z[i].binrep, TOL_ROUTE_LENGTH)) {
+        memcpy(everip_addr, tn->everip, EVERIP_ADDRESS_LENGTH);
+        return 0;
+      }
+      debug("TEMP DIFF = %d[PLACES=%d]\n", temp_diff, places);
+      if (temp_diff < local_diff) {
+        if (!tn_chosen || temp_diff < chosen_diff) {
+          tn_chosen = tn;
+          chosen_diff = temp_diff;
+        }
+      }
+    }
+  }
+
+  if (tn_chosen) {
+    memcpy(everip_addr, tn->everip, EVERIP_ADDRESS_LENGTH);
+    return 0;
+  }
+
+  return EADDRNOTAVAIL;
+}
+
+/**/
+
 uint16_t tol_get_childid(struct this_module *mod)
 {
   uint16_t out;
