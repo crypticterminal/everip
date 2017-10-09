@@ -35,12 +35,12 @@ int tol_command_callback( struct magi_melchior_rpc *rpc
       );
 
   switch (method->l) {
-//    case 3:
-//      /* dht */
-//      if (!memcmp(method->p, "dht", 3))
-//      {
-//        return treeoflife_command_cb_dht(tol_c, rpc);
-//      }
+    case 3:
+      /* dht */
+      if (!memcmp(method->p, "dht", 3))
+      {
+        return tol_command_cb_dht(mod, rpc);
+      }
     case 4:
       /* zone */
       if (!memcmp(method->p, "zone", 4))

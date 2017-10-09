@@ -211,7 +211,7 @@ int tol_command_cb_child( struct this_module *mod
       tol_command_send_child(_tn, tmp_zoneid);
     }
   }
-#if 0
+
   { /* x:s dht */
 
     /*
@@ -222,16 +222,17 @@ int tol_command_cb_child( struct this_module *mod
     if (!zone->parent)
       goto out;
 
-    (void)treeoflife_peer_dht_notify_send( zone->parent->cp.everip_addr
-                                         , mod->my_everip
-                                         , mod->my_public_key
-                                         , tmp_zoneid
-                                         , zone->root
-                                         , zone->binrep
-                                         , zone->binlen );
+    (void)tol_command_send_dht_notify( zone->parent->everip
+                                     , mod->my_everip
+                                     , mod->my_public_key
+                                     , tmp_zoneid
+                                     , zone->root
+                                     , zone->binrep
+                                     , zone->binlen );
+
     /* x:e dht */
   }
-#endif
+
 out:
   return err;
 }

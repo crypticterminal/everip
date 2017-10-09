@@ -20,10 +20,20 @@
 
 #define TOL_MAINTAIN_MS 5000
 #define TOL_MAINTAIN_CHILDREN_MS 5000
-
+#define TOL_DHT_TIMEOUT_MS 15000
 
 struct tol_peer;
 struct this_module;
+
+struct tol_dhti {
+  struct le le;
+  uint8_t binlen;
+  uint8_t binrep[TOL_ROUTE_LENGTH];
+  uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
+  uint8_t public_key[NOISE_PUBLIC_KEY_LEN];
+
+  struct tmr tmr;
+};
 
 struct tol_neighbor {
   struct le le_mod; /* this_module */
@@ -61,6 +71,8 @@ struct tol_zone {
 
   struct list children;
   uint32_t child_refresh_count;
+
+  struct list dhti_all;
 };
 
 struct this_module {
@@ -79,9 +91,35 @@ struct this_module {
 
 };
 
-int tol_command_callback( struct magi_melchior_rpc *rpc
-                        , struct pl *method
-                        , void *arg );
+/**/
+
+int tol_command_send_dht_notify( const uint8_t everip_forward[EVERIP_ADDRESS_LENGTH]
+                               , const uint8_t everip_record[EVERIP_ADDRESS_LENGTH]
+                               , const uint8_t public_key[NOISE_PUBLIC_KEY_LEN]
+                               , uint8_t zoneid
+                               , uint8_t root[EVERIP_ADDRESS_LENGTH]
+                               , uint8_t binrep[TOL_ROUTE_LENGTH]
+                               , uint8_t binlen );
+
+int tol_command_send_dht_found( const uint8_t everip_forward[EVERIP_ADDRESS_LENGTH]
+                              , const uint8_t everip_aquire[EVERIP_ADDRESS_LENGTH]
+                              , const uint8_t public_key[NOISE_PUBLIC_KEY_LEN]
+                              , uint8_t zoneid
+                              , uint8_t root[EVERIP_ADDRESS_LENGTH]
+                              , uint8_t from_binrep[TOL_ROUTE_LENGTH]
+                              , uint8_t from_binlen
+                              , uint8_t record_binrep[TOL_ROUTE_LENGTH]
+                              , uint8_t record_binlen );
+
+int tol_command_send_dht_aquire( const uint8_t everip_forward[EVERIP_ADDRESS_LENGTH]
+                               , const uint8_t everip_aquire[EVERIP_ADDRESS_LENGTH]
+                               , uint8_t zoneid
+                               , uint8_t root[EVERIP_ADDRESS_LENGTH]
+                               , uint8_t from_binrep[TOL_ROUTE_LENGTH]
+                               , uint8_t from_binlen );
+
+int tol_command_cb_dht( struct this_module *mod
+                      , struct magi_melchior_rpc *rpc );
 
 int tol_command_send_child( struct tol_neighbor *tn
                           , uint8_t zoneid );
@@ -94,6 +132,11 @@ int tol_command_send_zone( struct this_module *mod
 
 int tol_command_cb_zone( struct this_module *mod
                        , struct magi_melchior_rpc *rpc );
+
+int tol_command_callback( struct magi_melchior_rpc *rpc
+                        , struct pl *method
+                        , void *arg );
+
 
 /**/
 
