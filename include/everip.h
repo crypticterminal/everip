@@ -702,8 +702,12 @@ static inline int conduit_peer_debug(struct re_printf *pf, struct conduit_peer *
 
 static inline void conduit_peer_deref(struct conduit_peer *peer)
 {
+  struct noise_session *ns = NULL;
+  ns = list_ledata(peer->lsock.l.head);
+  ns = mem_deref( ns );
   list_unlink(&peer->le_addr);
   list_clear(&peer->lsock.l);
+
 }
 
 int conduit_peer_encrypted_send( struct conduit_peer *cp
