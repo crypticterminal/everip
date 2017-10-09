@@ -67,7 +67,7 @@ static int entry_add(struct odict *o, const char *name,
     return odict_entry_add(o, name, ODICT_STRING, &val->v.pl);
 
   case BENCODE_INT:
-    return odict_entry_add(o, name, ODICT_INT, val->v.integer);
+    return odict_entry_add(o, name, ODICT_INT, (int64_t)val->v.integer);
 
   default:
     return ENOSYS;

@@ -18,10 +18,10 @@
 #include <re.h>
 #include <everip.h>
 
-#if defined(WIN32) && !defined(PRId64 )
-#undef PRId64
-#define PRId64 "I64d"
-#endif
+//#if defined(WIN32) && !defined(PRId64 )
+//#undef PRId64
+//#define PRId64 "I64d"
+//#endif
 
 static int encode_entry(struct re_printf *pf, const struct odict_entry *e)
 {
@@ -56,7 +56,7 @@ static int encode_entry(struct re_printf *pf, const struct odict_entry *e)
 		break;
 
 	case ODICT_INT:
-		err = re_hprintf(pf, "i%" PRId64 "e", e->u.integer);
+		err = re_hprintf(pf, "i%llde", (int64_t)e->u.integer);
 		break;
 
 	case ODICT_STRING:

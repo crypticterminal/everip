@@ -230,7 +230,7 @@ int magi_melchior_send( struct magi_melchior *mm
 
   odict_entry_add(mmt->od_sent, "_p", ODICT_INT, (int64_t)EVERIP_VERSION_PROTOCOL);
   odict_entry_add(mmt->od_sent, "_m", ODICT_STRING, method);
-  odict_entry_add(mmt->od_sent, "_i", ODICT_INT, mmt->ticket_id);
+  odict_entry_add(mmt->od_sent, "_i", ODICT_INT, (int64_t)mmt->ticket_id);
   odict_entry_add(mmt->od_sent, "_t", ODICT_STRING, &(struct pl){.p=(const char *)everip_addr,.l=EVERIP_ADDRESS_LENGTH});
   
   mmt->sent_jiffies = tmr_jiffies();
@@ -459,7 +459,7 @@ int magi_melchior_recv( struct magi_melchior *mm, struct mbuf *mb)
         odict_entry_add(rpc_obj.out, "_m", ODICT_STRING, &(struct pl)PL("ever.res"));
       }
 
-      odict_entry_add(rpc_obj.out, "_i", ODICT_INT, ticket_id);
+      odict_entry_add(rpc_obj.out, "_i", ODICT_INT, (int64_t)ticket_id);
       odict_entry_add(rpc_obj.out, "_t", ODICT_STRING, &(struct pl){.p=(const char *)everip_addr,.l=EVERIP_ADDRESS_LENGTH});
 
       /*error("ODICT RES: %H\n", odict_debug, rpc_obj.out);*/
