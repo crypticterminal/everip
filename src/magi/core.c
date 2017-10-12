@@ -59,6 +59,12 @@ struct magi_ledbat_frame {
   size_t len;
 };
 
+/**/
+
+static void magi_maintenance_cb(void *data);
+
+/**/
+
 int magi_node_ledbat_sock_set( struct magi_node *mnode
                              , struct ledbat_sock *lsock )
 {
@@ -343,10 +349,15 @@ int magi_node_status_update( struct magi_node *mnode
   event.status = mnode->status;
   event.everip_addr = mnode->everip_addr;
 
-  if (push_event)
+  if (push_event) {
+    if (mnode->status == MAGI_NODE_STATUS_CONNECTED) {
+      mnode->last_hello = 0;
+      tmr_start(&mnode->ctx->maintenance, 1, magi_maintenance_cb, mnode->ctx);
+    }
     magi_eventdriver_handler_run( mnode->ctx->ed
                                 , MAGI_EVENTDRIVER_WATCH_E2E
                                 , &event );
+  }
 
   return 0;
 }
@@ -456,7 +467,9 @@ static void magi_maintenance_cb(void *data)
       continue;
     }
 
-    if (mnode->last_hello < now - 7000) {
+    if ( mnode->status >= MAGI_NODE_STATUS_CONNECTED
+      && mnode->last_hello < now - 7000 )
+    {
       /* send hello! */
 
       odict_alloc(&od, 8);
