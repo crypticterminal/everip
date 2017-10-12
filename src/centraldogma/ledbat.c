@@ -189,6 +189,8 @@ struct ledbat_sock {
 
   struct list bufs; /* struct ledbat_buf */
 
+  bool inside_write;
+
 };
 
 static int _ledbat_sock_alloc( struct ledbat_sock **lsockp
@@ -231,10 +233,34 @@ int ledbat_buf_alloc( struct ledbat_buf **lbp
   return err;
 }
 
-static int _ledbat_sock_write(struct ledbat_sock *lsock)
+static bool _ledbat_sock_write_h(struct ledbat_sock *lsock, struct ledbat_buf *lb)
 {
   size_t sent;
-  struct ledbat_buf *lb;
+
+  if (!lb)
+    return true;
+
+  lsock->inside_write = true;
+  sent = utp_write(lsock->sock, mbuf_buf(lb->mb), mbuf_get_left(lb->mb));
+  lsock->inside_write = false;
+  if (sent <= 0) {
+    debug("socket no longer writable\n");
+    return true;
+  }
+
+  mbuf_advance(lb->mb, sent);
+
+  if (0 == mbuf_get_left(lb->mb)) {
+    lb = mem_deref( lb );
+    
+  }
+
+  return false;
+}
+
+
+static int _ledbat_sock_write(struct ledbat_sock *lsock)
+{
 
   if (!lsock)
     return EINVAL;
@@ -242,24 +268,10 @@ static int _ledbat_sock_write(struct ledbat_sock *lsock)
   if (!lsock->sock)
     return ENOTCONN;
 
-  while (list_head(&lsock->bufs)) {
-    lb = list_head(&lsock->bufs)->data;
-
-/*again:*/
-    sent = utp_write(lsock->sock, mbuf_buf(lb->mb), mbuf_get_left(lb->mb));
-    if (sent <= 0) {
-      debug("socket no longer writable\n");
+  while (lsock->bufs.head) {
+    if (_ledbat_sock_write_h( lsock
+                            , (struct ledbat_buf *)lsock->bufs.head->data))
       break;
-    }
-
-    mbuf_advance(lb->mb, sent);
-
-    if (0 == mbuf_get_left(lb->mb)) {
-      lb = mem_deref( lb );
-      continue;
-    } else { /* full? */
-      break;
-    }
   }
 
   return 0;
@@ -271,6 +283,10 @@ int ledbat_sock_send(struct ledbat_sock *lsock, struct mbuf *mb)
 
   if (!lsock || !mb)
     return EINVAL;
+
+  /* sometimes we get caught in a virtual loop -- drop these packets */
+  if (lsock->inside_write)
+    return EALREADY;
 
   ledbat_buf_alloc(&lb, lsock, mb);
 
