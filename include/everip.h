@@ -653,6 +653,7 @@ struct conduit {
   conduit_debug_h *debug_h;
   void *debug_h_arg;
 
+  bool inside_search;
   conduit_search_h *search_h;
   void *search_h_arg;
 };

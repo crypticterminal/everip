@@ -439,9 +439,11 @@ conduits_conduit_peer_search( struct conduits *conduits
     /* oh boy, here we go! */
     LIST_FOREACH(&conduits->condl, le) {
       c = le->data;
-      if (!c->search_h)
+      if (!c->search_h || c->inside_search)
         continue;
+      c->inside_search = true;
       c->search_h(everip_addr, c->search_h_arg);
+      c->inside_search = false;
     }
   }
   return cp;
