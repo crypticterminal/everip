@@ -171,7 +171,7 @@ int tol_command_cb_zone( struct this_module *mod
     zone->binlen = tmp_binlen + 1;
     memset(zone->binrep, 0, TOL_ROUTE_LENGTH);
     memcpy(zone->root, tmp_rootp, EVERIP_ADDRESS_LENGTH);
-    error("[TREE] I AM CHILD of %W!\n", tn->everip, EVERIP_ADDRESS_LENGTH);
+    warning("[TREE] I AM CHILD of %W!\n", tn->everip, EVERIP_ADDRESS_LENGTH);
     list_flush(&mod->peers);
     list_flush(&zone->dhti_all); /* X:TODO change this to an event system */
     zone->active = false;
@@ -179,7 +179,7 @@ int tol_command_cb_zone( struct this_module *mod
     if ( zone->parent != tn
       && !memcmp(mod->my_everip, tmp_parentp, EVERIP_ADDRESS_LENGTH)) {
       list_append(&zone->children, &tn->z[tmp_zoneid].le_child, tn);
-      error("[TREE] I AM PARENT of %W!\n", tn->everip, EVERIP_ADDRESS_LENGTH);
+      warning("[TREE] I AM PARENT of %W!\n", tn->everip, EVERIP_ADDRESS_LENGTH);
     }
   }
 

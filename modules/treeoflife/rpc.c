@@ -29,7 +29,7 @@ int tol_command_callback( struct magi_melchior_rpc *rpc
   if (!rpc || !mod || !method)
     return EINVAL;
 
-  error( "[TREE] treeoflife_command_callback: [%r] from %w\n"
+  warning( "[TREE] melchior: [%r] from %w\n"
       , method
       , rpc->everip_addr, EVERIP_ADDRESS_LENGTH
       );

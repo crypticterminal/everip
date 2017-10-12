@@ -443,7 +443,7 @@ static void magi_maintenance_cb(void *data)
   LIST_FOREACH(&magi->nodes, le) {
     mnode = le->data;
     if (!mnode->ls) {
-      error("ATTEMPTING TO CONNECT VIA LEDBAT\n");
+      warning("[MAGI] ATTEMPTING TO CONNECT VIA LEDBAT\n");
       
       magi_node_status_update(mnode, MAGI_NODE_STATUS_SEARCHING);
 

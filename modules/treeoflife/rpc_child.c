@@ -219,11 +219,11 @@ int tol_command_cb_child( struct this_module *mod
 
   /**/
 
-  info("ZONE[%u]BINREP[%H]\n", tmp_zoneid, stack_debug, tmp_parent_br);
+  info("[TREE] ZONE[%u]BINREP[%H]\n", tmp_zoneid, stack_debug, tmp_parent_br);
   zone->parent->z[tmp_zoneid].binlen = tmp_parent_bl;
   memcpy(zone->parent->z[tmp_zoneid].binrep, tmp_parent_br, TOL_ROUTE_LENGTH);
 
-  info("MY BINREP[%H]\n", stack_debug, tmp_child_br);
+  info("[TREE] MY BINREP[%H]\n", stack_debug, tmp_child_br);
   zone->binlen = tmp_child_bl;
   memcpy(zone->binrep, tmp_child_br, TOL_ROUTE_LENGTH);
 

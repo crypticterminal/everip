@@ -268,7 +268,7 @@ static int udp_engine_alloc( struct udp_engine **uep
                            , true
                            , ue);
   if (err) {
-    error("[udp] listen error (%m)\n", err);
+    error("[udp-b] listen error for %J (%m)\n", &laddr, err);
     goto out;
   }
 
@@ -279,7 +279,7 @@ static int udp_engine_alloc( struct udp_engine **uep
                       , IPV6_MULTICAST_IF
                       , &if_index, sizeof(if_index) );
   if (err) {
-    error("[udp] could not set index option (%m)\n", err);
+    error("[udp-b] could not set index option (%m)\n", err);
     goto out;
   }
 #endif
@@ -315,7 +315,7 @@ static int udp_engine_alloc( struct udp_engine **uep
                            , true
                            , ue);
   if (err) {
-    error("[udp] listen error (%m)\n", err);
+    error("[udp] listen error for %J (%m)\n", &ue->bound, err);
     goto out;
   }
 

@@ -284,7 +284,7 @@ int tol_zone_reset(struct this_module *mod, struct tol_zone *zone)
 {
   uint16_t neighbor_count = 0;
 
-  error("[TREE] tol_zone_reset\n");
+  warning("[TREE] tol_zone_reset\n");
 
   if (!mod || !zone)
     return EINVAL;
