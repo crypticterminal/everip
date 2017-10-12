@@ -593,7 +593,6 @@ void everip_close(void)
 #endif
 
   /* handles sendto, etc. */
-  everip.ledbat = mem_deref(everip.ledbat);
 
   everip.magi_melchior = mem_deref(everip.magi_melchior);
   everip.magi = mem_deref( everip.magi );
@@ -609,6 +608,8 @@ void everip_close(void)
   everip.conduits = mem_deref(everip.conduits);
   everip.noise = mem_deref(everip.noise);
   everip.eventdriver = mem_deref(everip.eventdriver);
+
+  everip.ledbat = mem_deref(everip.ledbat);
 }
 
 
