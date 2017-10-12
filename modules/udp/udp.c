@@ -406,7 +406,8 @@ static int magi_event_watcher_h( enum MAGI_EVENTDRIVER_WATCH type
 
   /* we check interface kind */
   if ( !(event->if_options & NETEVENT_EVENT_OPT_KIND)
-    || event->if_kind != NETEVENTS_IFACE_KIND_ETHERNET)
+    || ( event->if_kind != NETEVENTS_IFACE_KIND_ETHERNET
+      && event->if_kind != NETEVENTS_IFACE_KIND_WIRELESS) )
     goto out;
 
   if (!sa_isset(&event->sa, SA_ADDR))
