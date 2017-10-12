@@ -168,7 +168,7 @@ struct ledbat {
   void *callback_arg;
 };
 
-#define LEDBAT_BUF_LIMIT 32U
+#define LEDBAT_BUF_LIMIT_BYTES 1400000U
 
 struct ledbat_buf {
   struct le le;
@@ -190,6 +190,8 @@ struct ledbat_sock {
   struct list bufs; /* struct ledbat_buf */
 
   bool inside_write;
+
+  ssize_t outstanding_bytes;
 
 };
 
@@ -248,6 +250,8 @@ static bool _ledbat_sock_write_h(struct ledbat_sock *lsock, struct ledbat_buf *l
     return true;
   }
 
+  lsock->outstanding_bytes -= sent;
+
   mbuf_advance(lb->mb, sent);
 
   if (0 == mbuf_get_left(lb->mb)) {
@@ -279,6 +283,7 @@ static int _ledbat_sock_write(struct ledbat_sock *lsock)
 
 int ledbat_sock_send(struct ledbat_sock *lsock, struct mbuf *mb)
 {
+  int err = 0;
   struct ledbat_buf *lb = NULL;
 
   if (!lsock || !mb)
@@ -288,7 +293,13 @@ int ledbat_sock_send(struct ledbat_sock *lsock, struct mbuf *mb)
   if (lsock->inside_write)
     return EALREADY;
 
-  ledbat_buf_alloc(&lb, lsock, mb);
+  if (lsock->outstanding_bytes + mbuf_get_left(mb) >= LEDBAT_BUF_LIMIT_BYTES)
+    return EALREADY;
+
+  err = ledbat_buf_alloc(&lb, lsock, mb);
+  if (!err && lb) {
+    lsock->outstanding_bytes += mbuf_get_left(mb);
+  }
 
   /* attempt to write-out */
   _ledbat_sock_write(lsock);
