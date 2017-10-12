@@ -43,18 +43,17 @@ static int tol_dhti_add_or_update( struct tol_zone *zone
 {
   int err = 0;
   struct le *le;
-  bool dhti_already_exists = false;
-  struct tol_dhti *dhti;
+  struct tol_dhti *dhti = NULL;
 
   LIST_FOREACH(&zone->dhti_all, le) {
     dhti = le->data;
     if (!memcmp(dhti->everip_addr, everip_addr, EVERIP_ADDRESS_LENGTH)) {
-      dhti_already_exists = true;
       break;
     }
+    dhti = NULL;
   }
 
-  if (!dhti_already_exists) {
+  if (!dhti) {
     /* create dhti here */
     dhti = mem_zalloc(sizeof(*dhti), tol_dhti_destructor);
     if (!dhti) {
