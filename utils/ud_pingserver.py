@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import socket
-import os, os.path
+import sys, os, os.path
 
 from scapy import all as scapy
 
@@ -18,7 +18,7 @@ if os.path.exists(path_recv_sock):
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
 sock.bind( path_recv_sock )
 
-sock.connect("/tmp/ever-socket-fc52d8e963d7a04923a47cdbe684d2ae.sock")
+sock.connect(sys.argv[1])
 
 sock.send("hello")
 
