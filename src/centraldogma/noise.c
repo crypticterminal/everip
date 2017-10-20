@@ -44,7 +44,7 @@
 static const uint8_t g_hshake[37] = "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s";
 
 #if defined(SIGNED_CLA_LICENSE)
-  CLA_LICENSE_DATA__NOISE_INIT;
+  CLA_LICENSE_DATA__NOISE_INIT
 #else
 #error Please contact connectFree Licensing or its distributor network for a license to use this product.
 static const uint8_t g_ident[] = "ConnectFree(R) EVER/IP(R) v1 (c) kristopher tate and ConnectFree Corporation";
