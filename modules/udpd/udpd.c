@@ -137,6 +137,12 @@ static void _recv_handler(const struct sa *src, struct mbuf *mb, void *arg)
     new_peer = true;
     sa_cpy(&up->sa, src);
     up->cp.conduit = mod->conduit;
+
+    err = conduit_peer_initiate( &up->cp
+                               , NULL /* no key */
+                               , false /* no handshake */
+                               );
+
     hash_append(mod->peers, sa_hash(src, SA_ALL), &up->le, up);
   }
 
@@ -173,7 +179,11 @@ static void module_destructor(void *data)
   mod->peers = mem_deref( mod->peers );
 
   mod->us = mem_deref( mod->us );
-  mod->conduit = mem_deref( mod->conduit );
+
+  mod->conduit = conduits_unregister( mod->conduit );
+  /* are we still holding onto it? */
+  if (mod->conduit)
+    mod->conduit = mem_deref( mod->conduit );
 }
 
 static int module_init(void)
