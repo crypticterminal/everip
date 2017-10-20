@@ -237,9 +237,6 @@ int magi_node_ledbat_recv( struct magi_node *mnode, struct mbuf *mb )
       case MAGI_LEDBAT_PORT_MELCHIOR:
         magi_melchior_recv(everip_magi_melchior(), _mb);
         break;
-      case MAGI_LEDBAT_PORT_TREEOFLIFE:
-        treeoflife_ledbat_recv( _mb );
-        break;
       default:
         error("magi_node_ledbat_recv: unknown port: %u\n", frame.port);
         break;
@@ -278,12 +275,12 @@ static bool _magi_node_lookup_addr(struct le *le, void *arg)
 static void magi_node_destructor(void *data)
 {
   struct magi_node *mnode = data;
-  
-  (void)magi_node_status_update(mnode, MAGI_NODE_STATUS_REMOVAL);
 
   list_unlink(&mnode->le);
   list_unlink(&mnode->le_idx_key);
   list_unlink(&mnode->le_idx_addr);
+
+  (void)magi_node_status_update(mnode, MAGI_NODE_STATUS_REMOVAL);
 
   mnode->ls = mem_deref( mnode->ls );
   mnode->mb = mem_deref(mnode->mb);
@@ -302,6 +299,7 @@ int magi_node_apply( struct magi *magi, magi_node_apply_h *fn, void *arg)
     mnode = le->data;
     memset(&event, 0, sizeof(event));
     event.magi = mnode->ctx;
+    event.mnode = mnode;
     event.status = mnode->status;
     event.everip_addr = mnode->everip_addr;
     if (fn(&event, arg))
@@ -346,6 +344,7 @@ int magi_node_status_update( struct magi_node *mnode
   mnode->status = status;
 
   event.magi = mnode->ctx;
+  event.mnode = mnode;
   event.status = mnode->status;
   event.everip_addr = mnode->everip_addr;
 
@@ -495,6 +494,9 @@ static void magi_maintenance_cb(void *data)
 static void magi_destructor(void *data)
 {
   struct magi *magi = data;
+
+  magi->ed = mem_deref(magi->ed);
+
   list_flush(&magi->nodes);
   magi->idx_key = mem_deref( magi->idx_key );
   magi->idx_addr = mem_deref( magi->idx_addr );
@@ -523,6 +525,7 @@ int magi_alloc(struct magi **magip, struct magi_eventdriver *med)
     goto out;
 
   magi->ed = med;
+  mem_ref(magi->ed);
 
   tmr_start(&magi->maintenance, 1000, magi_maintenance_cb, magi);
 
