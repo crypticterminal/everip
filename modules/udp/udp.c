@@ -18,6 +18,15 @@
 #include <re.h>
 #include <everip.h>
 
+/*
+
+  MEMOS
+  * https://blog.powerdns.com/2012/10/08/on-binding-datagram-udp-sockets-to-the-any-addresses/
+  * https://github.com/PowerDNS/pdns/blob/master/pdns/nameserver.cc
+  * https://github.com/miniupnp/miniupnp/blob/master/minissdpd/openssdpsocket.c
+
+*/
+
 struct this_module;
 
 struct this_module {
@@ -162,7 +171,6 @@ static void _recv_handler( struct udp_engine *ue
 {
   int err = 0;
   struct udp_peer *up = NULL;
-  bool new_peer = false;
 
   up = list_ledata(hash_lookup( ue->peers
                               , sa_hash(src, SA_ALL)
@@ -173,9 +181,12 @@ static void _recv_handler( struct udp_engine *ue
     up = mem_zalloc(sizeof(*up), udp_peer_destructor);
     if (!up)
       return;
-    new_peer = true;
     sa_cpy(&up->sa, src);
     up->cp.conduit = ue->conduit;
+    err = conduit_peer_initiate( &up->cp
+                               , NULL /* no key */
+                               , false /* no handshake */
+                               );
     hash_append(ue->peers, sa_hash(src, SA_ALL), &up->le, up);
   }
 
@@ -184,13 +195,14 @@ static void _recv_handler( struct udp_engine *ue
 
   err = conduit_incoming(ue->conduit, &up->cp, mb);
 
-  if (err && err != EALREADY) {
-    up = mem_deref( up );
+  if (err) {
+    if (err == EPROTO) {
+      up = mem_deref( up );
+    }
   } else if (is_bcast) {
     /* remove bcast flag */
     up->cp.flags &= ~(CONDUIT_PEER_FLAG_BCAST);
   }
-
 }
 
 static void recv_handler(const struct sa *src, struct mbuf *mb, void *arg)
@@ -258,9 +270,14 @@ static int udp_engine_alloc( struct udp_engine **uep
   if (err)
     goto out;
 
+#if 0
+  sa_cpy(&laddr, if_addr);
+  sa_set_port(&laddr, 8891);
+#else
   err = sa_set_str(&laddr, "::", 8891);
   if (err)
     goto out;
+#endif
 
   err = udp_listen_advanced( &ue->us_bcast
                            , &laddr
@@ -301,7 +318,7 @@ static int udp_engine_alloc( struct udp_engine **uep
 #if 1
   err = udp_multicast_join(ue->us_bcast, &ue->group, ue->if_index);
   if (err) {
-    error("[udp] error joining multicast group %J (%m)\n", &ue->group, err);
+    error("[udp-b] error joining multicast group %J (%m)\n", &ue->group, err);
     goto out;
   }
 #endif
