@@ -4,6 +4,7 @@ MODULES   += udp
 MODULES   += udpd
 MODULES   += treeoflife
 MODULES   += web
+MODULES   += dnet
 
 #ui
 ifeq ($(OS),win32)
