@@ -182,12 +182,24 @@ static int wsc_peer_alloc( struct wsc_peer **wpp
   *new_peer = 1;
 
   wp->cp.conduit = mod->conduit;
+
+  err = conduit_peer_initiate( &wp->cp
+                             , NULL /* no key */
+                             , false /* no handshake */
+                             );
+  if (err)
+    goto out;
+
   wp->mod = mod;
   memcpy(wp->everip_addr, everip_addr, EVERIP_ADDRESS_LENGTH);
   hash_append(mod->peers, *(uint32_t *)(void *)everip_addr, &wp->le, wp);
 
-  *wpp = wp;
-
+out:
+  if (err) {
+    wp = mem_deref( wp );
+  } else {
+    *wpp = wp;
+  }
   return err;
 }
 
@@ -809,7 +821,11 @@ static void module_destructor(void *data)
   hash_flush( mod->peers );
   mod->peers = mem_deref( mod->peers );
 
-  g_mod->conduit = mem_deref( g_mod->conduit );
+  g_mod->conduit = conduits_unregister( g_mod->conduit );
+  /* are we still holding onto it? */
+  if (g_mod->conduit)
+    g_mod->conduit = mem_deref( g_mod->conduit );
+
   tmr_cancel(&mod->tmr_maintain);
 }
 
