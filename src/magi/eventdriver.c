@@ -53,6 +53,9 @@ int magi_eventdriver_handler_run( struct magi_eventdriver *ed
   struct list *handlers;
   struct magi_eventdriver_handler *edh;
 
+  if (!ed)
+    return EINVAL;
+
   handlers = _grab_handler(ed, type);
   if (!handlers)
     return EINVAL;
