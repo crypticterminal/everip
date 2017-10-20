@@ -23,6 +23,10 @@
 #include <gendo.h>
 #endif
 
+#if defined(SIGNED_CLA_LICENSE)
+#include <cla_license_data.h>
+#endif
+
 #if 1
 #define noise_info(...)
 #define noise_debug(...)
@@ -38,7 +42,14 @@
 #endif
 
 static const uint8_t g_hshake[37] = "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s";
-static const uint8_t g_ident[100] = "ConnectFree(R) EVER/IP(R) V1 (c) kristopher tate and ConnectFree Corporation -- All Rights Reserved.";
+
+#if defined(SIGNED_CLA_LICENSE)
+  CLA_LICENSE_DATA__NOISE_INIT;
+#else
+#error Please contact connectFree Licensing or its distributor network for a license to use this product.
+static const uint8_t g_ident[] = "ConnectFree(R) EVER/IP(R) v1 (c) kristopher tate and ConnectFree Corporation";
+static const uint8_t g_identkey[] = "NOT LICENSED: THIS KEY MUST BE LICENSED FROM CONNECTFREE CORPORATION";
+#endif
 
 #define UNSIGNED_LONG_BITS 32 /*(sizeof(unsigned long) * 8)*/
 
@@ -453,24 +464,24 @@ _mix_dh( uint8_t chaining_key[NOISE_HASH_LEN]
   return true;
 }
 
-static void _message_encrypt( uint8_t *dst_ciphertext
-                            , const uint8_t *src_plaintext
-                            , size_t src_len
-                            , uint8_t key[NOISE_SYMMETRIC_KEY_LEN]
-                            , uint8_t hash[NOISE_HASH_LEN] )
+static void _mhash_message_encrypt( uint8_t *dst_ciphertext
+                                  , const uint8_t *src_plaintext
+                                  , size_t src_len
+                                  , uint8_t key[NOISE_SYMMETRIC_KEY_LEN]
+                                  , uint8_t hash[NOISE_HASH_LEN] )
 {
-  unsigned long long ciphertext_len;
-  uint8_t nonce[NOICE_NONCE_LEN] = {0};
+  uint8_t nonce[NOISE_NONCE_LEN] = {0};
 
-  crypto_aead_chacha20poly1305_ietf_encrypt( dst_ciphertext
-                                           , &ciphertext_len
-                                           , src_plaintext
-                                           , src_len
-                                           , hash
-                                           , NOISE_HASH_LEN
-                                           , NULL
-                                           , nonce /* TODO hmmmmm */
-                                           , key );
+  crypto_aead_chacha20poly1305_encrypt( dst_ciphertext
+                                      , NULL
+                                      , src_plaintext
+                                      , src_len
+                                      , hash /* ad */
+                                      , NOISE_HASH_LEN /* adlen */
+                                      , NULL /* NSEC */
+                                      , nonce /* NONCE will always be zero for Noise_IK */
+                                      , key /* key */
+                                      );
 
   _mix_hash( hash
            , dst_ciphertext
@@ -478,24 +489,24 @@ static void _message_encrypt( uint8_t *dst_ciphertext
            );
 }
 
-static bool _message_decrypt( uint8_t *dst_plaintext
-                            , const uint8_t *src_ciphertext
-                            , size_t src_len
-                            , uint8_t key[NOISE_SYMMETRIC_KEY_LEN]
-                            , uint8_t hash[NOISE_HASH_LEN] )
+static bool _mhash_message_decrypt( uint8_t *dst_plaintext
+                                  , const uint8_t *src_ciphertext
+                                  , size_t src_len
+                                  , uint8_t key[NOISE_SYMMETRIC_KEY_LEN]
+                                  , uint8_t hash[NOISE_HASH_LEN] )
 {
-  unsigned long long decrypted_len;
-  uint8_t nonce[NOICE_NONCE_LEN] = {0};
+  uint8_t nonce[NOISE_NONCE_LEN] = {0};
 
-  if (crypto_aead_chacha20poly1305_ietf_decrypt( dst_plaintext
-                                               , &decrypted_len
-                                               , NULL
-                                               , src_ciphertext
-                                               , src_len
-                                               , hash
-                                               , NOISE_HASH_LEN
-                                               , nonce /* TODO hmmmmm */
-                                               , key) != 0) {
+  if (crypto_aead_chacha20poly1305_decrypt( dst_plaintext /* out message */
+                                          , NULL /* out mlen */
+                                          , NULL /* NSEC */
+                                          , src_ciphertext
+                                          , src_len
+                                          , hash /* ad */
+                                          , NOISE_HASH_LEN /* adlen */
+                                          , nonce /* NONCE will always be zero for Noise_IK */
+                                          , key /* key */
+                                          ) != 0) {
     return false;
   }
     
@@ -611,7 +622,6 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
   uint8_t timestamp[NOISE_TIMESTAMP_LEN];
   uint8_t key[NOISE_SYMMETRIC_KEY_LEN];
 
-  uint32_t out_type;
   uint32_t out_sender_index;
   uint8_t out_unencrypted_ephemeral[32];
   uint8_t out_encrypted_static[NOISE_ENCRYPTED_LEN(32)];
@@ -639,8 +649,6 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
 
   ns->last_sent_handshake = tmr_jiffies();
 
-  out_type = arch_htole32(1);
-
   _handshake_init(ns->ne, hs->chaining_key, hs->hash, hs->remote_static);
 
   lsock_install(lsock, &hs->lsock_le, ns);
@@ -663,11 +671,11 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
     goto out;
 
   /* s */
-  _message_encrypt( out_encrypted_static
-                  , hs->static_identity->public
-                  , NOISE_PUBLIC_KEY_LEN
-                  , key
-                  , hs->hash);
+  _mhash_message_encrypt( out_encrypted_static
+                        , hs->static_identity->public
+                        , NOISE_PUBLIC_KEY_LEN
+                        , key
+                        , hs->hash);
 
   /* ss */
   _kdf( hs->chaining_key
@@ -684,11 +692,11 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
   
   tai64n_now( timestamp );
 
-  _message_encrypt( out_encrypted_timestamp
-                  , timestamp
-                  , NOISE_TIMESTAMP_LEN
-                  , key
-                  , hs->hash);
+  _mhash_message_encrypt( out_encrypted_timestamp
+                        , timestamp
+                        , NOISE_TIMESTAMP_LEN
+                        , key
+                        , hs->hash);
 
   /* unlink if were linked */
   hash_unlink(&ns->lookup.le);
@@ -712,7 +720,7 @@ int noise_session_hs_step1_pilot( struct noise_session *ns
 
   mb_pos = mb->pos;
 
-  mbuf_write_u32(mb, out_type);
+  mbuf_write_u32(mb, arch_htole32( 1 ));
   mbuf_write_u32(mb, out_sender_index);
   mbuf_write_mem(mb, out_unencrypted_ephemeral, 32);
   mbuf_write_mem(mb, out_encrypted_static, NOISE_ENCRYPTED_LEN(32));
@@ -738,7 +746,8 @@ out:
 static struct noise_session *
 noise_session_hs_step2_copilot( struct noise_engine *ne
                               , uintptr_t channel_lock
-                              , struct mbuf *mb )
+                              , struct mbuf *mb
+                              , enum NOISE_ENGINE_RECIEVE *err )
 {
   bool replay_attack, flood_attack;
   uint8_t s[NOISE_PUBLIC_KEY_LEN];
@@ -758,12 +767,16 @@ noise_session_hs_step2_copilot( struct noise_engine *ne
   struct noise_session *ns = NULL;
   struct noise_session_handshake *hs;
 
-  if (!ne || !ne->si.has_identity || !mb)
+  if (!ne || !ne->si.has_identity || !mb) {
+    *err = NOISE_ENGINE_RECIEVE_EINVAL;
     return NULL;
+  }
 
   /* read msg */
-  if (mbuf_get_left(mb) < 144)
+  if (mbuf_get_left(mb) < 144) {
+    *err = NOISE_ENGINE_RECIEVE_EBADMSG;
     return NULL;
+  }
 
   in_sender_index = arch_letoh32( mbuf_read_u32(mb) );
   mbuf_read_mem(mb, in_unencrypted_ephemeral, 32);
@@ -782,7 +795,7 @@ noise_session_hs_step2_copilot( struct noise_engine *ne
     goto out;
 
   /* s */
-  if (!_message_decrypt(s, in_encrypted_static, sizeof(in_encrypted_static), key, hash))
+  if (!_mhash_message_decrypt(s, in_encrypted_static, sizeof(in_encrypted_static), key, hash))
     goto out;
 
   handshake_debug("INCOMING: %W\n", s, NOISE_PUBLIC_KEY_LEN);
@@ -796,8 +809,10 @@ noise_session_hs_step2_copilot( struct noise_engine *ne
                      , NULL /*preshared_key*/);
   }
 
-  if (!ns)
+  if (!ns) {
+    *err = NOISE_ENGINE_RECIEVE_EINVAL;
     goto out;
+  }
 
   hs = &ns->handshake;
 
@@ -813,11 +828,11 @@ noise_session_hs_step2_copilot( struct noise_engine *ne
       , chaining_key);
 
   /* {t} */
-  if (!_message_decrypt( t
-                       , in_encrypted_timestamp
-                       , sizeof(in_encrypted_timestamp)
-                       , key
-                       , hash))
+  if (!_mhash_message_decrypt( t
+                             , in_encrypted_timestamp
+                             , sizeof(in_encrypted_timestamp)
+                             , key
+                             , hash))
     goto out;
 
   replay_attack = memcmp(t, hs->latest_timestamp, NOISE_TIMESTAMP_LEN) <= 0;
@@ -825,6 +840,7 @@ noise_session_hs_step2_copilot( struct noise_engine *ne
 
   if (replay_attack || flood_attack) {
     ns = NULL;
+    *err = NOISE_ENGINE_RECIEVE_EREPLAY;
     goto out;
   }
 
@@ -851,7 +867,6 @@ static bool noise_session_hs_step3_copilot( struct mbuf **mb_replyp
   struct mbuf *mb_reply = NULL;
   size_t mb_reply_pos;
 
-  uint32_t out_type;
   uint32_t out_sender_index;
   uint32_t out_receiver_index;
   uint8_t out_unencrypted_ephemeral[32];
@@ -863,7 +878,6 @@ static bool noise_session_hs_step3_copilot( struct mbuf **mb_replyp
   if (ns->handshake.state != HANDSHAKE_CONSUMED_INITIATION)
     goto out;
 
-  out_type = arch_htole32(2);
   out_receiver_index = ns->handshake.remote_index;
 
   /* e */
@@ -897,11 +911,11 @@ static bool noise_session_hs_step3_copilot( struct mbuf **mb_replyp
           , ns->handshake.preshared_key );
 
   /* {} */
-  _message_encrypt( out_encrypted_nothing
-                  , NULL
-                  , 0
-                  , key
-                  , ns->handshake.hash );
+  _mhash_message_encrypt( out_encrypted_nothing
+                        , NULL
+                        , 0
+                        , key
+                        , ns->handshake.hash );
 
   /* unlink if were linked */
   hash_unlink(&ns->lookup.le);
@@ -923,7 +937,7 @@ static bool noise_session_hs_step3_copilot( struct mbuf **mb_replyp
 
   mb_reply_pos = mb_reply->pos;
 
-  mbuf_write_u32(mb_reply, out_type );
+  mbuf_write_u32(mb_reply, arch_htole32( 2 ));
   mbuf_write_u32(mb_reply, out_sender_index );
   mbuf_write_u32(mb_reply, out_receiver_index );
   mbuf_write_mem(mb_reply, out_unencrypted_ephemeral, 32);
@@ -943,7 +957,8 @@ out:
 
 static struct noise_session *
 noise_session_hs_step4_pilot( struct noise_engine *ne
-                            , struct mbuf *mb )
+                            , struct mbuf *mb
+                            , enum NOISE_ENGINE_RECIEVE *err )
 {
   struct noise_session *ns = NULL;
   struct noise_session_handshake *hs;
@@ -964,12 +979,16 @@ noise_session_hs_step4_pilot( struct noise_engine *ne
   uint8_t in_mac1[16];
   uint8_t in_mac2[16];
 
-  if (!ne || !ne->si.has_identity || !mb)
+  if (!ne || !ne->si.has_identity || !mb) {
+    *err = NOISE_ENGINE_RECIEVE_EINVAL;
     goto out;
+  }
 
   /* read packet! */
-  if (mbuf_get_left(mb) < 88)
+  if (mbuf_get_left(mb) < 88) {
+    *err = NOISE_ENGINE_RECIEVE_EBADMSG;
     return NULL;
+  }
 
   in_sender_index = arch_letoh32( mbuf_read_u32(mb) );
   in_receiver_index = arch_letoh32( mbuf_read_u32(mb) );
@@ -979,8 +998,10 @@ noise_session_hs_step4_pilot( struct noise_engine *ne
   mbuf_read_mem(mb, in_mac2, 16);
 
   ns = noise_engine_lookup_session_byid(ne, in_receiver_index);
-  if (!ns)
+  if (!ns) {
+    *err = NOISE_ENGINE_RECIEVE_EINVAL;
     goto fail;
+  }
 
   hs = &ns->handshake;
 
@@ -989,34 +1010,43 @@ noise_session_hs_step4_pilot( struct noise_engine *ne
   memcpy(chaining_key, hs->chaining_key, NOISE_HASH_LEN);
   memcpy(ephemeral_private, hs->ephemeral_private, NOISE_PUBLIC_KEY_LEN);
 
-  if (state != HANDSHAKE_CREATED_INITIATION)
+  if (state != HANDSHAKE_CREATED_INITIATION) {
+    *err = NOISE_ENGINE_RECIEVE_EINVAL;
     goto fail;
+  }
 
   /* e */
   _message_ephemeral(e, in_unencrypted_ephemeral, chaining_key, hash);
 
   /* ee */
-  if (!_mix_dh(chaining_key, NULL, ephemeral_private, e))
+  if (!_mix_dh(chaining_key, NULL, ephemeral_private, e)) {
+    *err = NOISE_ENGINE_RECIEVE_EBADMSG;
     goto out;
+  }
 
   /* se */
-  if (!_mix_dh(chaining_key, NULL, ne->si.private, e))
+  if (!_mix_dh(chaining_key, NULL, ne->si.private, e)) {
+    *err = NOISE_ENGINE_RECIEVE_EBADMSG;
     goto out;
+  }
 
   /* psk */
   _mix_psk(chaining_key, hash, key, hs->preshared_key);
 
   /* {} */
-  if (!_message_decrypt( NULL
-                       , in_encrypted_nothing
-                       , sizeof(in_encrypted_nothing)
-                       , key
-                       , hash))
+  if (!_mhash_message_decrypt( NULL
+                             , in_encrypted_nothing
+                             , sizeof(in_encrypted_nothing)
+                             , key
+                             , hash)) {
+    *err = NOISE_ENGINE_RECIEVE_EBADMSG;
     goto fail;
+  }
 
   /* Success! Copy everything to peer */
-  /* It's important to check that the state is still the same, while we have an exclusive lock */
+  /* It's important to check that the state is still the same */
   if (hs->state != state) {
+    *err = NOISE_ENGINE_RECIEVE_EBADMSG;
     goto fail;
   }
   
@@ -1106,10 +1136,10 @@ fail:
 
 static int _noise_session_send( struct noise_session *ns
                               , struct mbuf *mb
-                              , uint32_t message_type )
+                              , uint8_t message_type )
 {
-  uint8_t nonce[NOICE_NONCE_LEN] = {0};
-  uint64_t *nonce_64 = (uint64_t *)(void *)&nonce[NOICE_NONCE_LEN - sizeof(uint64_t)];
+  uint8_t nonce[NOISE_NONCE_LEN] = {0};
+  uint64_t *nonce_64 = (uint64_t *)(void *)&nonce[NOISE_NONCE_LEN - sizeof(uint64_t)];
   struct noise_symmetric_key *key;
   size_t mb_pos;
   size_t mlen;
@@ -1140,26 +1170,27 @@ static int _noise_session_send( struct noise_session *ns
   *nonce_64 = arch_htole64( *nonce_64 );
 
   /* kickback mb */
-  mbuf_advance(mb, (ssize_t)(-(16 + NOISE_AUTHTAG_LEN)));
+  mbuf_advance(mb, -(ssize_t)(16 + NOISE_AUTHTAG_LEN));
   mb_pos = mb->pos;
 
-  mbuf_write_u32(mb, arch_htole32( message_type ));
-  mbuf_write_u32(mb, arch_htole32( ns->keypair_now->remote_index ));
-  mbuf_write_u64(mb, *nonce_64);
+  mbuf_write_u32(mb, arch_htole32( message_type )); /* L:4 */
+  mbuf_write_u32(mb, arch_htole32( ns->keypair_now->remote_index )); /* L:4 */
+  mbuf_write_u64(mb, *nonce_64); /* L:8 */
 
   /* we use this for tx counter later */
   mlen = mbuf_get_left(mb) - NOISE_AUTHTAG_LEN;
 
-  crypto_aead_chacha20poly1305_ietf_encrypt_detached( mbuf_buf(mb) + NOISE_AUTHTAG_LEN
-                                                    , mbuf_buf(mb)
-                                                    , NULL
-                                                    , mbuf_buf(mb) + NOISE_AUTHTAG_LEN
-                                                    , mlen
-                                                    , NULL
-                                                    , 0
-                                                    , NULL
-                                                    , nonce
-                                                    , key->key );
+  crypto_aead_chacha20poly1305_encrypt_detached( mbuf_buf(mb) + NOISE_AUTHTAG_LEN /* cyphertext pointer */
+                                               , mbuf_buf(mb) /* MAC */
+                                               , NULL /* maclen_p */
+                                               , mbuf_buf(mb) + NOISE_AUTHTAG_LEN /* message pointer */
+                                               , mlen /* message length */
+                                               , NULL /* additional data */
+                                               , 0 /* additional data length */
+                                               , NULL /* NSEC */
+                                               , nonce /* nonce */
+                                               , key->key /* key */
+                                               );
 
   noise_session_tmr_control(ns, NOISE_TIMER_ON_POLY_TXRX);
   noise_session_tmr_control(ns, NOISE_TIMER_ON_DATA_TX); /* make sure this is not keep alive */
@@ -1501,8 +1532,8 @@ static int noise_engine_data_rx( struct noise_engine *ne
                                , struct mbuf *mb
                                , struct lsock *lsock)
 {
-  uint8_t nonce[NOICE_NONCE_LEN] = {0};
-  uint64_t *nonce_64 = (uint64_t *)(void *)&nonce[NOICE_NONCE_LEN - sizeof(uint64_t)];
+  uint8_t nonce[NOISE_NONCE_LEN] = {0};
+  uint64_t *nonce_64 = (uint64_t *)(void *)&nonce[NOISE_NONCE_LEN - sizeof(uint64_t)];
   struct noise_session *ns = NULL;
   struct noise_keypair *kp = NULL;
   struct noise_symmetric_key *key = NULL;
@@ -1545,17 +1576,18 @@ static int noise_engine_data_rx( struct noise_engine *ne
   }
 
   /* decrypt */
-  if (crypto_aead_chacha20poly1305_ietf_decrypt_detached( mbuf_buf(mb) + NOISE_AUTHTAG_LEN
-                                                        , NULL
-                                                        , mbuf_buf(mb) + NOISE_AUTHTAG_LEN
-                                                        , mbuf_get_left(mb) - NOISE_AUTHTAG_LEN
-                                                        , mbuf_buf(mb)
-                                                        , NULL
-                                                        , 0
-                                                        , nonce
-                                                        , key->key))
+  if (crypto_aead_chacha20poly1305_decrypt_detached( mbuf_buf(mb) + NOISE_AUTHTAG_LEN /* out message */
+                                                   , NULL /* NSEC */
+                                                   , mbuf_buf(mb) + NOISE_AUTHTAG_LEN /* in cyphertext */
+                                                   , mbuf_get_left(mb) - NOISE_AUTHTAG_LEN /* in cyphertext length */
+                                                   , mbuf_buf(mb) /* in mac pointer */
+                                                   , NULL /* additional data */
+                                                   , 0 /* additional data length */
+                                                   , nonce /* nonce */
+                                                   , key->key /* key */
+                                                   ) != 0)
   {
-    error("crypto_aead_chacha20poly1305_ietf_decrypt_detached\n");
+    error("crypto_aead_chacha20poly1305_decrypt_detached\n");
     return EBADMSG;
   }
 
@@ -1634,11 +1666,13 @@ int noise_engine_session_handle_register( struct noise_engine *ne
   return 0;
 }
 
-int noise_engine_recieve( struct noise_engine *ne
-                        , struct noise_session **nsp
-                        , uintptr_t channel_lock
-                        , struct mbuf *mb
-                        , struct lsock *lsock )
+
+enum NOISE_ENGINE_RECIEVE
+noise_engine_recieve( struct noise_engine *ne
+                    , struct noise_session **nsp
+                    , uintptr_t channel_lock
+                    , struct mbuf *mb
+                    , struct lsock *lsock )
 {
   enum NOISE_ENGINE_RECIEVE err = NOISE_ENGINE_RECIEVE_OK;
   uint32_t type;
@@ -1652,14 +1686,23 @@ int noise_engine_recieve( struct noise_engine *ne
 
   type = arch_letoh32( mbuf_read_u32(mb) );
 
-  noise_debug("noise_engine_recieve <%p> [%u][%u][%W]\n", ne, type, mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));
+  /*
+   * numbers are only 8 bits;
+   * we use u32 to check that the correct endian was used
+   */
+  if (type > 6)
+    return NOISE_ENGINE_RECIEVE_EBADMSG;
+
+  noise_debug( "noise_engine_recieve <%p> [%u][%u][%W]\n"
+             , ne, type, mbuf_get_left(mb), mbuf_buf(mb), mbuf_get_left(mb));
 
   switch (type) {
     case 1:
-      ns = noise_session_hs_step2_copilot(ne, channel_lock, mb);
+      ns = noise_session_hs_step2_copilot(ne, channel_lock, mb, &err);
       if (!ns) {
         handshake_debug("noise_engine_recieve(s2): DROP invalid handshake\n");
-        err = NOISE_ENGINE_RECIEVE_EBADMSG;
+        if (!err)
+          err = NOISE_ENGINE_RECIEVE_EBADMSG;
         goto out;
       }
 
@@ -1679,13 +1722,13 @@ int noise_engine_recieve( struct noise_engine *ne
       } else {
         handshake_error("noise_session_hs_reply\n");
       }
-      break;
-    
+      goto out;
     case 2:
-      ns = noise_session_hs_step4_pilot(ne, mb);
+      ns = noise_session_hs_step4_pilot(ne, mb, &err);
       if (!ns) {
         handshake_debug("noise_engine_recieve(s4): DROP invalid handshake\n");
-        err = NOISE_ENGINE_RECIEVE_EBADMSG;
+        if (!err)
+          err = NOISE_ENGINE_RECIEVE_EBADMSG;
         goto out;
       }
 
@@ -1696,7 +1739,8 @@ int noise_engine_recieve( struct noise_engine *ne
       } else {
         handshake_error("noise_session_hs_begin\n");
       }
-      break;
+
+      goto out;
     case 5: /* keepalive ping */
       /* @FALLTHROUGH@ */
     case 6: /* keepalive ping */
@@ -1719,7 +1763,7 @@ int noise_engine_recieve( struct noise_engine *ne
           _noise_session_keepalive_recv(ns, mb);
         }
       }
-      break;
+      goto out;
     default:
       warning("UNKNOWN TYPE <%u>\n", type);
       err = NOISE_ENGINE_RECIEVE_EBADMSG;
@@ -1847,6 +1891,7 @@ int noise_engine_init( struct noise_engine **nenginep
   blake2s_init(&ctx, NOISE_HASH_LEN, NULL, 0);
   blake2s_update(&ctx, ne->hshake_chaining_key, NOISE_HASH_LEN);
   blake2s_update(&ctx, g_ident, sizeof(g_ident));
+  blake2s_update(&ctx, g_identkey, sizeof(g_identkey));
   blake2s_final(&ctx, ne->hshake_hash);
 
   list_init(&ne->sessions_all);
