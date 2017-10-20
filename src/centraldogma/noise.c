@@ -160,6 +160,8 @@ struct noise_session {
   uint64_t keepalive_diff;
   uint16_t keepalive_nonce;
 
+  uint64_t rx_last, tx_last;
+
   uint64_t rx_bytes, tx_bytes;
   unsigned int tmr_hs_attempts;
   unsigned long persistent_keepalive_interval;
@@ -595,7 +597,7 @@ uint64_t noise_session_score(struct noise_session *ns)
     || ns->keepalive_diff > (KEEPALIVE_TIMEOUT + REKEY_TIMEOUT))
     return UINT64_MAX - ns->event_last;
 
-  return ns->keepalive_diff;
+  return ns->keepalive_diff + (ns->tx_last > ns->rx_last ? ns->tx_last - ns->rx_last : 0);
 }
 
 int noise_session_counters( struct noise_session *ns
@@ -1211,6 +1213,8 @@ static int _noise_session_send( struct noise_session *ns
   ns->tx_bytes += mlen;
   ns->keypair_now->tx_bytes += mlen;
 
+  ns->tx_last = tmr_jiffies();
+
   return 0;
 }
 
@@ -1636,6 +1640,8 @@ static int noise_engine_data_rx( struct noise_engine *ne
 
   ns->rx_bytes += mbuf_get_left(mb);
   kp->rx_bytes += mbuf_get_left(mb);
+
+  ns->rx_last = tmr_jiffies();
 
   *nsp = ns;
 
