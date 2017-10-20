@@ -24,6 +24,8 @@
 struct conduits {
   struct list condl;
   uint32_t id_counter;
+
+  struct list peers;
   struct hash *hash_cp_addr;
 
   struct csock csock;
@@ -31,6 +33,9 @@ struct conduits {
   struct tmr beacon;
 
   struct magi_eventdriver *ed;
+
+  struct conduit *inside_conduit;
+  bool inside_psearch;
 
 };
 
@@ -120,7 +125,9 @@ static int _noise_h( struct lsock *lsock
 #endif
       if (!peer->conduit || !peer->conduit->send_h)
         break;
+      peer->conduit->ctx->inside_conduit = peer->conduit;
       peer->conduit->send_h(peer, mb, peer->conduit->send_h_arg);
+      peer->conduit->ctx->inside_conduit = NULL;
       break;
     case SOCK_TYPE_NOISE_EVENT:
       {
@@ -173,7 +180,8 @@ out:
   return 0;
 }
 
-int conduit_peer_encrypted_send( struct conduit_peer *cp
+int conduit_peer_encrypted_send( const struct conduit_peer *cp
+                               , uint16_t type
                                , struct mbuf *mb )
 {
   struct noise_session *ns = NULL;
@@ -185,6 +193,10 @@ int conduit_peer_encrypted_send( struct conduit_peer *cp
   if (!ns)
     return EINVAL;
 
+  mbuf_advance(mb, -2);
+  mbuf_write_u16(mb, arch_htobe16( type ));
+  mbuf_advance(mb, -2);
+
   return noise_session_send(ns, mb);
 }
 
@@ -193,33 +205,41 @@ int conduit_peer_initiate( struct conduit_peer *peer
                          , bool do_handshake )
 {
   int err = 0;
+  struct conduit *c;
   struct noise_session *session = NULL;
 
-  if (!peer || !public_key)
+  if (!peer || !peer->conduit)
     return EINVAL;
 
-  /* deprecate? */
-  (void)do_handshake;
-
-  err = noise_session_new( &session
-                         , everip_noise()
-                         , (uintptr_t)peer->conduit
-                         , public_key
-                         , NULL /* preshared_key */ );
-
-  if (err == EALREADY) {
-    err = 0;
-  } else if (err) {
-    goto out;
-  }
-
+  c = peer->conduit;
   peer->lsock.s = _noise_h;
 
-  /* X:TODO perhaps instead of a full step1,
-     we should have a push function */
-  noise_session_hs_step1_pilot( session
-                              , false
-                              , &peer->lsock );
+  if (public_key) {
+    err = noise_session_new( &session
+                           , everip_noise()
+                           , (uintptr_t)c
+                           , public_key
+                           , NULL /* preshared_key */ );
+
+    if (err == EALREADY) {
+      err = 0;
+    } else if (err) {
+      goto out;
+    }
+  }
+
+  if (do_handshake) {
+    /* X:TODO perhaps instead of a full step1,
+       we should have a push function */
+    noise_session_hs_step1_pilot( session
+                                , false
+                                , &peer->lsock );
+  }
+
+  list_unlink(&peer->le_conduits);
+  list_append(&c->ctx->peers, &peer->le_conduits, peer);
+
+  peer->initiated = true;
 
 out:
   return err;
@@ -276,12 +296,11 @@ int conduit_incoming( struct conduit *conduit
   struct noise_session *ns = NULL;
   enum NOISE_ENGINE_RECIEVE ne_rx;
 
-  if (!conduit || conduit != cp->conduit)
+  if (!cp || !cp->initiated || !conduit || conduit != cp->conduit || !mb)
     return EINVAL;
 
   debug("conduit_incoming\n");
 
-  cp->lsock.s = _noise_h;
 
   if (cp->flags & CONDUIT_PEER_FLAG_BCAST) {
     cp->flags &= ~CONDUIT_PEER_FLAG_BCAST;
@@ -316,7 +335,7 @@ int conduit_incoming( struct conduit *conduit
                                 , mb
                                 , &cp->lsock );
 
-    if (ne_rx < 0) {
+    if (ne_rx < NOISE_ENGINE_RECIEVE_OK) {
       goto bad;
     }
     if (ne_rx == NOISE_ENGINE_RECIEVE_DECRYPTED) {
@@ -331,35 +350,54 @@ bad:
   return EPROTO;
 }
 
-static struct csock *_from_outside( struct csock *csock
-                                          , enum SOCK_TYPE type
-                                          , void *data )
-{
-  struct conduit_data *cdata = data;
-  if (!csock || type != SOCK_TYPE_DATA_CONDUIT || !cdata)
-    return NULL;
-
-  debug("_from_outside (same as conduit_peer_encrypted_send)\n");
-
-  conduit_peer_encrypted_send(cdata->cp, cdata->mb);
-
-  return NULL;
-}
-
 struct _conduits_conduit_peer_lookup_s {
+  struct conduits *ctx;
   const uint8_t *everip_addr;
-  bool allow_virtual;
+  struct conduits_conduit_peer_search_criteria *criteria;
+
+  uint32_t hit_count;
 };
+
+static inline
+bool _conduits_conduit_peer_sendable(struct conduits *c, struct conduit_peer *cp)
+{
+  if ( !cp->conduit || cp->conduit == c->inside_conduit
+    || cp->ns_last_event < NOISE_SESSION_EVENT_CONNECTED)
+    return false;
+  return true;
+}
 
 static bool _conduits_conduit_peer_lookup(struct le *le, void *arg)
 {
   struct conduit_peer *cp = le->data;
   struct _conduits_conduit_peer_lookup_s *tool = arg;
-  if (!cp->conduit || cp->ns_last_event < NOISE_SESSION_EVENT_CONNECTED)
+
+  if (memcmp(cp->everip_addr, tool->everip_addr, EVERIP_ADDRESS_LENGTH))
     return false;
-  if (!tool->allow_virtual && (cp->conduit->flags & CONDUIT_FLAG_VIRTUAL))
+
+  tool->hit_count++;
+
+  if (!_conduits_conduit_peer_sendable(tool->ctx, cp))
     return false;
-  return 0 == memcmp(cp->everip_addr, tool->everip_addr, EVERIP_ADDRESS_LENGTH);
+
+  if (tool->criteria) {
+    if (tool->criteria->no_virtuals && (cp->conduit->flags & CONDUIT_FLAG_VIRTUAL))
+      return false;
+
+    for (int i = 0; i < tool->criteria->in.conduitc; ++i)
+    {
+      if (cp->conduit != (tool->criteria->in.conduitv + i))
+        return false;
+    }
+
+    for (int i = 0; i < tool->criteria->ex.conduitc; ++i)
+    {
+      if (cp->conduit == (tool->criteria->ex.conduitv + i))
+        return false;
+    }
+  }
+
+  return true;
 }
 
 static bool _conduits_conduit_peer_sort_h(struct le *le1, struct le *le2, void *arg)
@@ -399,19 +437,22 @@ static bool _conduits_conduit_peer_sort_h(struct le *le1, struct le *le2, void *
 
 struct conduit_peer *
 conduits_conduit_peer_search( struct conduits *conduits
-                            , bool allow_virtual
+                            , struct conduits_conduit_peer_search_criteria *criteria
+                            , bool do_netsearch
                             , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] )
 {
   uint32_t _id;
   struct le *le;
   struct list *sort_list = NULL;
-  struct conduit *c;
+  struct conduit *c = NULL;
   struct conduit_peer *cp = NULL;
 
   struct _conduits_conduit_peer_lookup_s lookup_s;
 
   if (!conduits || !everip_addr)
     return NULL;
+
+  memset(&lookup_s, 0, sizeof(lookup_s));
 
   /*error("conduits_conduit_peer_search %W\n", everip_addr, EVERIP_ADDRESS_LENGTH);*/
 
@@ -427,26 +468,56 @@ conduits_conduit_peer_search( struct conduits *conduits
 #endif
   }
 
+  lookup_s.ctx = conduits;
   lookup_s.everip_addr = everip_addr;
-  lookup_s.allow_virtual = allow_virtual;
+  lookup_s.criteria = criteria;
 
   cp = list_ledata(hash_lookup( conduits->hash_cp_addr
                               , _id
                               , _conduits_conduit_peer_lookup
                               , &lookup_s));
 
-  if (!cp) {
+  /*error("HIT COUNT: %W:%u\n", everip_addr, EVERIP_ADDRESS_LENGTH, lookup_s.hit_count);*/
+
+  if (do_netsearch && !lookup_s.hit_count) {
     /* oh boy, here we go! */
+    if (conduits->inside_psearch)
+      goto out;
+    conduits->inside_psearch = true;
     LIST_FOREACH(&conduits->condl, le) {
       c = le->data;
-      if (!c->search_h || c->inside_search)
+      if (!c->search_h)
         continue;
-      c->inside_search = true;
+      conduits->inside_conduit = c;
       c->search_h(everip_addr, c->search_h_arg);
-      c->inside_search = false;
+      conduits->inside_conduit = NULL;
     }
+    conduits->inside_psearch = false;
   }
+out:
   return cp;
+}
+
+int conduits_conduit_peer_apply( struct conduits *c
+                               , conduit_peer_apply_h *apply_h
+                               , bool only_sendable
+                               , void *arg )
+{
+  struct le *le;
+  struct conduit_peer *cp = NULL;
+
+  if (!c || !apply_h)
+    return EINVAL;
+
+  LIST_FOREACH(&c->peers, le) {
+    cp = le->data;
+    if (only_sendable && !_conduits_conduit_peer_sendable(c, cp))
+      continue;
+    if (apply_h(cp, arg))
+      break;
+  }
+
+  return 0;
 }
 
 int conduit_register_peer_create( struct conduit *conduit
@@ -609,7 +680,9 @@ static void conduits_beacon_cb( void *data )
     mbuf_advance(mb, -44);
 
     /* SEND */
+    conduits->inside_conduit = c;
     c->send_h(&bcast_peer, mb, c->send_h_arg);
+    conduits->inside_conduit = NULL;
 
     mb = mem_deref(mb);
   }
@@ -648,7 +721,7 @@ int conduits_init( struct conduits **conduitsp
 
   hash_alloc(&conduits->hash_cp_addr, 16);
 
-  conduits->csock.send = _from_outside;
+  conduits->csock.send = NULL;
   csock_flow(csock, &conduits->csock);
 
   /* timer */

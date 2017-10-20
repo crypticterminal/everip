@@ -73,23 +73,23 @@ static uint64_t ledbat_callback_h(ledbat_callback_arguments *a, void *arg)
            , everip_addr, EVERIP_ADDRESS_LENGTH );
 
       cp_selected = conduits_conduit_peer_search( everip.conduits
-                                                , true /* virtual is OK */
+                                                , NULL /* open criteria */
+                                                , true /* yes, do netsearch */
                                                 , everip_addr );
       if (!cp_selected) {
         debug("ledbat_callback_h: peer not found yet\n");
         return 0;
       }
 
-      mb = mbuf_outward_alloc(2 + a->len);
+      mb = mbuf_outward_alloc(a->len);
       if (!mb)
         goto out;
 
-      mbuf_write_u16(mb, arch_htobe16( TYPE_BASE ));
       mbuf_write_mem(mb, a->buf, a->len);
-
       mbuf_set_pos(mb, EVER_OUTWARD_MBE_POS);
     
       conduit_peer_encrypted_send( cp_selected
+                                 , FRAME_TYPE_LEDBAT
                                  , mb );
 
       mb = mem_deref( mb );
@@ -204,7 +204,8 @@ static struct csock *_from_tun( struct csock *csock
   next_header = ihdr->next_header;
 
   cp_selected = conduits_conduit_peer_search( everip.conduits
-                                            , true /* virtual is OK */
+                                            , NULL /* open criteria */
+                                            , true /* yes, do netsearch */
                                             , ihdr->dst );
   if (!cp_selected) {
     debug("_from_tun: peer not found yet\n");
@@ -212,11 +213,9 @@ static struct csock *_from_tun( struct csock *csock
   }
 
   mbuf_advance(mb, WIRE_IPV6_HEADER_LENGTH);
-  mbuf_advance(mb, -2);
-  mbuf_write_u16(mb, arch_htobe16(next_header));
-  mbuf_advance(mb, -2);
 
   conduit_peer_encrypted_send( cp_selected
+                             , next_header
                              , mb );
 
   return NULL;
@@ -239,7 +238,7 @@ static struct csock *_from_conduits( struct csock *csock
 
   next_header = arch_betoh16(mbuf_read_u16(cdata->mb));
 
-  if (next_header < TYPE_BASE) {
+  if (next_header < FRAME_TYPE_BASE) {
     /* IPv6 */
 
     /*info("IPv6<%u>: %u\n", next_header, mbuf_get_left(cdata->mb));*/
@@ -272,12 +271,30 @@ static struct csock *_from_conduits( struct csock *csock
                  , SOCK_TYPE_DATA_MB
                  , cdata->mb );
   } else {
-    /* later check return value... */
-    ledbat_process_incoming( everip_ledbat()
-                           , cdata->cp->everip_addr
-                           , cdata->mb );
+    switch (next_header) {
+      case FRAME_TYPE_LEDBAT:
+        goto ledbat;
+      case FRAME_TYPE_TREEOFLIFE:
+        goto treeoflife;
+      case FRAME_TYPE_DNET:
+        goto dnet;
+      default:
+        return NULL;
+    }
   }
 
+ledbat:
+  ledbat_process_incoming( everip_ledbat()
+                         , cdata->cp->everip_addr
+                         , cdata->mb );
+  return NULL;
+
+treeoflife:
+  treeoflife_conduit_incoming(cdata->cp, cdata->mb);
+  return NULL;
+
+dnet:
+  dnet_conduit_incoming( cdata->cp, cdata->mb );
   return NULL;
 
 }
@@ -570,12 +587,13 @@ skip_tun:
 
   /* conduits*/
   module_preload("null");
-  module_preload("udp");
-  module_preload("udpd");
+  /*module_preload("udp");*/
+  /*module_preload("udpd");*/
   module_preload("web");
 
-  /* virtual */
-  module_preload("treeoflife");
+  /* virtual conduits */
+  /*module_preload("dnet");*/
+  /*module_preload("treeoflife");*/
 
 #if defined(HAVE_GENDO)
   GENDO_MID;

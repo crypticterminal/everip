@@ -36,7 +36,6 @@ static inline bool everip_version_compat(uint32_t a, uint32_t b) {
 
 /* super defines */
 
-#define TYPE_BASE 256
 #define KEY_LENGTH 15
 #define ZONE_COUNT 1
 #define ROUTE_LENGTH 16 /* 128 bytes */
@@ -48,6 +47,11 @@ static inline bool everip_version_compat(uint32_t a, uint32_t b) {
 
 ASSERT_COMPILETIME(TAI64_N_LEN == (sizeof(uint64_t) + sizeof(uint32_t)));
 
+#define FRAME_TYPE_BASE 256
+#define FRAME_TYPE_LEDBAT 256
+#define FRAME_TYPE_TREEOFLIFE 257
+#define FRAME_TYPE_DNET 512
+
 struct noise_engine;
 struct noise_session;
 
@@ -58,10 +62,10 @@ struct ledbat_sock;
 enum noise_lengths {
     NOISE_PUBLIC_KEY_LEN = 32U
   , NOISE_SECRET_KEY_LEN = 32U
-  , NOISE_SYMMETRIC_KEY_LEN = crypto_aead_chacha20poly1305_IETF_KEYBYTES
+  , NOISE_SYMMETRIC_KEY_LEN = crypto_aead_chacha20poly1305_KEYBYTES
   , NOISE_TIMESTAMP_LEN = TAI64_N_LEN
-  , NOISE_AUTHTAG_LEN = crypto_aead_chacha20poly1305_IETF_ABYTES
-  , NOICE_NONCE_LEN = crypto_aead_chacha20poly1305_IETF_NPUBBYTES
+  , NOISE_AUTHTAG_LEN = crypto_aead_chacha20poly1305_ABYTES
+  , NOISE_NONCE_LEN = crypto_aead_chacha20poly1305_NPUBBYTES
   , NOISE_HASH_LEN = 32U
 };
 
@@ -71,7 +75,8 @@ enum NOISE_SESSION_HANDLE {
 };
 
 enum NOISE_ENGINE_RECIEVE {
-    NOISE_ENGINE_RECIEVE_EBADMSG = -1
+    NOISE_ENGINE_RECIEVE_EBADMSG = -2
+  , NOISE_ENGINE_RECIEVE_EREPLAY = -1
   , NOISE_ENGINE_RECIEVE_OK = 0
   , NOISE_ENGINE_RECIEVE_EINVAL = 1
   , NOISE_ENGINE_RECIEVE_IGNORE = 2
@@ -180,7 +185,7 @@ static inline struct mbuf * mbuf_outward_alloc(size_t size)
     goto out;
 
   mb->pos = EVER_OUTWARD_MBE_POS;
-  mb->end = EVER_OUTWARD_MBE_POS + size;
+  mb->end = EVER_OUTWARD_MBE_POS;
 
 out:
   return mb;
@@ -243,6 +248,7 @@ enum MAGI_EVENTDRIVER_WATCH {
 enum MAGI_LEDBAT_PORT {
      MAGI_LEDBAT_PORT_MELCHIOR = 0
    , MAGI_LEDBAT_PORT_TREEOFLIFE
+   , MAGI_LEDBAT_PORT_DNET
    , MAGI_LEDBAT_PORT_MAXIMUM /* must be last! */
 };
 
@@ -278,6 +284,7 @@ struct magi_melchior_rpc {
 
 struct magi_e2e_event {
   struct magi *magi;
+  struct magi_node *mnode;
   enum MAGI_NODE_STATUS status;
   const uint8_t *everip_addr;
 };
@@ -580,11 +587,12 @@ int noise_engine_session_handle_register( struct noise_engine *ne
                                         , enum NOISE_SESSION_HANDLE type
                                         , struct csock *csock );
 
-int noise_engine_recieve( struct noise_engine *ne
-                        , struct noise_session **nsp
-                        , uintptr_t channel_lock
-                        , struct mbuf *mb
-                        , struct lsock *lsock );
+enum NOISE_ENGINE_RECIEVE
+noise_engine_recieve( struct noise_engine *ne
+                    , struct noise_session **nsp
+                    , uintptr_t channel_lock
+                    , struct mbuf *mb
+                    , struct lsock *lsock );
 
 int noise_engine_publickey_copy( struct noise_engine *ne
                                , uint8_t public_key[NOISE_PUBLIC_KEY_LEN] );
@@ -617,6 +625,8 @@ void cryptosign_bytes(uint8_t skpk[64], uint8_t *m, size_t mlen);
 
 struct conduits;
 struct conduit_peer;
+
+typedef bool (conduit_peer_apply_h)(const struct conduit_peer *cp, void *arg);
 
 typedef int (conduit_peer_create_h)(struct conduit_peer **peerp, struct pl *key, struct pl *host, void *arg);
 
@@ -653,7 +663,6 @@ struct conduit {
   conduit_debug_h *debug_h;
   void *debug_h_arg;
 
-  bool inside_search;
   conduit_search_h *search_h;
   void *search_h_arg;
 };
@@ -663,18 +672,33 @@ struct conduit {
 struct conduit_peer {
   struct le le_addr; /* struct conduits */
   struct le le_conduit; /* struct conduit */
+  struct le le_conduits; /* struct conduits */
+
   uint8_t flags;
   uint8_t everip_addr[EVERIP_ADDRESS_LENGTH];
   struct conduit *conduit;
   enum NOISE_SESSION_EVENT ns_last_event;
 
   struct lsock lsock;
+  bool initiated;
 
 };
 
 struct conduit_data {
   struct conduit_peer *cp;
   struct mbuf *mb;
+};
+
+struct conduits_conduit_peer_search_criteria {
+  bool no_virtuals;
+  struct {
+    struct conduit *conduitv;
+    uint16_t conduitc;
+  } in;
+  struct {
+    struct conduit *conduitv;
+    uint16_t conduitc;
+  } ex;
 };
 
 static inline int conduit_peer_debug(struct re_printf *pf, struct conduit_peer *peer)
@@ -704,14 +728,19 @@ static inline int conduit_peer_debug(struct re_printf *pf, struct conduit_peer *
 static inline void conduit_peer_deref(struct conduit_peer *peer)
 {
   struct noise_session *ns = NULL;
-  ns = list_ledata(peer->lsock.l.head);
-  ns = mem_deref( ns );
+  /* only deref noise session if we are the last linked */
+  if (1 == list_count(&peer->lsock.l)) {
+    ns = list_ledata(peer->lsock.l.head);
+    ns = mem_deref( ns );
+  }
   list_unlink(&peer->le_addr);
+  list_unlink(&peer->le_conduit);
+  list_unlink(&peer->le_conduits);
   list_clear(&peer->lsock.l);
-
 }
 
-int conduit_peer_encrypted_send( struct conduit_peer *cp
+int conduit_peer_encrypted_send(const struct conduit_peer *cp
+                               , uint16_t type
                                , struct mbuf *mb );
 
 int conduit_peer_initiate( struct conduit_peer *peer
@@ -746,8 +775,14 @@ int conduit_register_search_handler( struct conduit *conduit
 
 struct conduit_peer *
 conduits_conduit_peer_search( struct conduits *conduits
-                            , bool allow_virtual
-                            , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH] );
+                            , struct conduits_conduit_peer_search_criteria *criteria
+                            , bool do_netsearch
+                            , const uint8_t everip_addr[EVERIP_ADDRESS_LENGTH]);
+
+int conduits_conduit_peer_apply( struct conduits *c
+                               , conduit_peer_apply_h *apply_h
+                               , bool only_sendable
+                               , void *arg );
 
 int conduits_init( struct conduits **conduitsp
                  , struct csock *csock
@@ -758,6 +793,7 @@ int conduits_register( struct conduit **conduitp
                      , uint8_t flags
                      , const char *name
                      , const char *desc );
+
 struct conduit *conduits_unregister( struct conduit *conduit );
 
 #define conduit_find conduit_find_byname
@@ -933,7 +969,13 @@ int stack_debug(struct re_printf *pf, const uint8_t *binrep);
  * Tree of Life
  */
 
-int treeoflife_ledbat_recv( struct mbuf *mb );
+int treeoflife_conduit_incoming( struct conduit_peer *cp, struct mbuf *mb );
+
+/*
+ * DNET
+ */
+
+int dnet_conduit_incoming( struct conduit_peer *cp, struct mbuf *mb );
 
 /*
  * Modules
