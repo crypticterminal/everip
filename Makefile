@@ -169,6 +169,11 @@ CFLAGS    += -I$(USEGENDO)include
 CFLAGS += -DHAVE_GENDO
 endif
 
+ifneq ($(SIGNED_CLA_LICENSE),)
+CFLAGS    += -I$(SIGNED_CLA_LICENSE)
+CFLAGS += -DSIGNED_CLA_LICENSE
+endif
+
 #LIB_OBJS += $(LIBSODIUM_PATH)/lib/libsodium.a
 
 LIBS_PRE += $(LIBUTP_SO)/libutp.a
