@@ -242,9 +242,8 @@ static bool _ledbat_sock_write_h(struct ledbat_sock *lsock, struct ledbat_buf *l
   if (!lb)
     return true;
 
-  lsock->inside_write = true;
   sent = utp_write(lsock->sock, mbuf_buf(lb->mb), mbuf_get_left(lb->mb));
-  lsock->inside_write = false;
+
   if (sent <= 0) {
     debug("socket no longer writable\n");
     return true;
@@ -272,11 +271,15 @@ static int _ledbat_sock_write(struct ledbat_sock *lsock)
   if (!lsock->sock)
     return ENOTCONN;
 
+  lsock->inside_write = true;
   while (lsock->bufs.head) {
     if (_ledbat_sock_write_h( lsock
                             , (struct ledbat_buf *)lsock->bufs.head->data))
       break;
   }
+  lsock->inside_write = false;
+
+  utp_issue_deferred_acks(lsock->ctx->utp);
 
   return 0;
 }
@@ -447,7 +450,7 @@ static void ledbat_timer(void *data)
   struct ledbat *ledbat = data;
   utp_check_timeouts(ledbat->utp);
   utp_issue_deferred_acks(ledbat->utp);
-  tmr_start(&ledbat->tmr, 300, ledbat_timer, ledbat);
+  tmr_start(&ledbat->tmr, 500, ledbat_timer, ledbat);
 }
 
 int ledbat_sock_connect( struct ledbat_sock *lsock
