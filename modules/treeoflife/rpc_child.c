@@ -54,6 +54,7 @@ int tol_command_send_child( struct tol_neighbor *tn
   /* okay, send address push */
   odict_alloc(&od, 8);
 
+  odict_entry_add( od, "v", ODICT_INT, (int64_t)TOL_VERSION_ID);
   odict_entry_add( od, "zoneid", ODICT_INT, (int64_t)zoneid);
 
   odict_entry_add( od
@@ -136,6 +137,12 @@ int tol_command_cb_child( struct this_module *mod
     [X] child_br
     [X] child_bl
   */
+
+  ode = odict_lookup(rpc->in, "v");
+  if (!ode || ode->type != ODICT_INT || ode->u.integer != TOL_VERSION_ID) {
+    err = EPROTO;
+    goto out;
+  }
 
   ode = odict_lookup(rpc->in, "zoneid");
   if (!ode || ode->type != ODICT_INT) {

@@ -75,12 +75,20 @@ int tol_peer_alloc( struct tol_peer **tpp
   memcpy(tp->cp.everip_addr, everip, EVERIP_ADDRESS_LENGTH);
   tp->cp.conduit = mod->conduit;
 
+  err = conduit_peer_initiate( &tp->cp
+                             , NULL /* no key */
+                             , false /* no handshake */
+                             );
+  if (err)
+    goto out;
+
   list_append( &mod->peers, &tp->le_mod, tp);
   hash_append( mod->peers_addr
              , *(uint32_t *)(void *)everip
              , &tp->le_mod_addr
              , tp);
 
+out:
   if (err) {
     tp = mem_deref(tp);
   } else {
@@ -212,7 +220,6 @@ int tol_conduit_sendto_virtual( struct conduit_peer *peer
 {
   int err = 0;
   size_t pos_top;
-  struct magi_node *mnode = NULL;
   struct tol_peer *tp = NULL;
   struct tol_zone *zone = NULL;
   struct this_module *mod = arg;
@@ -247,14 +254,6 @@ int tol_conduit_sendto_virtual( struct conduit_peer *peer
   warning( "ROUTING REQUEST VIA [%W]\n"
        , everip_addr_route
        , EVERIP_ADDRESS_LENGTH );
-
-  /* X:IDEA we should cache this in the future */
-  mnode = magi_node_lookup_by_eipaddr(everip_magi(), everip_addr_route );
-
-  if (!mnode) {
-    error("_sendto_virtual: hmm, no magi record!\n");
-    goto out;
-  }
 
   /* form packet for request */
   /*
@@ -291,14 +290,31 @@ int tol_conduit_sendto_virtual( struct conduit_peer *peer
 
   mbuf_set_pos(mb, pos_top);
 
-  /* send packet via ledbat */
-  magi_node_ledbat_send(mnode, mb, MAGI_LEDBAT_PORT_TREEOFLIFE);
+  {
+    struct conduit_peer *cp_selected = NULL;
+    struct conduits_conduit_peer_search_criteria criteria;
+    memset(&criteria, 0, sizeof(criteria));
+
+    criteria.ex.conduitv = peer->conduit;
+    criteria.ex.conduitc = 1;
+
+    cp_selected = conduits_conduit_peer_search( everip_conduits()
+                                              , &criteria
+                                              , false /* no netsearch */
+                                              , everip_addr_route );
+    if (!cp_selected)
+      goto out;
+
+    conduit_peer_encrypted_send( cp_selected
+                               , FRAME_TYPE_TREEOFLIFE
+                               , mb );
+  }
 
 out:
   return err;
 }
 
-int tol_conduit_incoming( struct this_module *mod, struct mbuf *mb )
+int tol_conduit_incoming( struct this_module *mod, struct conduit_peer *cp, struct mbuf *mb )
 {
   int err = 0;
   size_t pos_top;
@@ -312,7 +328,6 @@ int tol_conduit_incoming( struct this_module *mod, struct mbuf *mb )
   uint8_t in__src_binlen;
   uint8_t in__src_binrep[TOL_ROUTE_LENGTH];
 
-  struct magi_node *mnode = NULL;
   struct tol_zone *zone = NULL;
   struct tol_peer *tp = NULL;
   uint8_t everip_addr_route[EVERIP_ADDRESS_LENGTH] = {0};
@@ -333,6 +348,9 @@ int tol_conduit_incoming( struct this_module *mod, struct mbuf *mb )
   pos_top = mb->pos;
 
   in__ver = mbuf_read_u8(mb);
+
+  if (in__ver != TOL_VERSION_ID)
+    goto out;
 
   mbuf_read_mem(mb, in__everip_dst, EVERIP_ADDRESS_LENGTH);
   if (in__everip_dst[0] != 0xFC)
@@ -358,6 +376,7 @@ int tol_conduit_incoming( struct this_module *mod, struct mbuf *mb )
   in__src_binlen = mbuf_read_u8(mb);
   mbuf_read_mem(mb, in__src_binrep, TOL_ROUTE_LENGTH);
 
+#if 1
   warning( "[TREE][ROUTE][v%u] [%W][%u@%H] -> [%W][%u@%H] ? %u@%H\n"
        , in__ver
        , in__everip_src, (size_t)EVERIP_ADDRESS_LENGTH
@@ -366,6 +385,12 @@ int tol_conduit_incoming( struct this_module *mod, struct mbuf *mb )
        , in__dst_binlen, stack_debug, in__dst_binrep
        , zone->binlen, stack_debug, zone->binrep
        );
+#endif
+
+  if (memcmp(zone->root, in__rootidp, EVERIP_ADDRESS_LENGTH)) {
+    warning("[TREE] DROP; Packet from invalid rootid\n");
+    goto out;
+  }
 
   /* determine if we need to forward or eat the packet */
   if ( !memcmp(mod->my_everip, in__everip_dst, EVERIP_ADDRESS_LENGTH)) {
@@ -382,8 +407,10 @@ int tol_conduit_incoming( struct this_module *mod, struct mbuf *mb )
 
     err = conduit_incoming(mod->conduit, &tp->cp, mb);
 
-    if (err && err != EALREADY) {
-      tp = mem_deref( tp );
+    if (err) {
+      if (err != EALREADY) {
+        tp = mem_deref( tp );
+      }
     } else {
       /* update peer if need be */
       tp->zoneid = in__zoneid;
@@ -394,31 +421,42 @@ int tol_conduit_incoming( struct this_module *mod, struct mbuf *mb )
   }
   else
   { /* forwardable */
+    struct conduit_peer *cp_selected = NULL;
+    struct conduits_conduit_peer_search_criteria criteria;
+    memset(&criteria, 0, sizeof(criteria));
 
-    mnode = magi_node_lookup_by_eipaddr(everip_magi(), in__everip_dst );
+    criteria.ex.conduitv = mod->conduit;
+    criteria.ex.conduitc = 1;
 
-    if (!mnode) {
-      if (memcmp(zone->root, in__rootidp, EVERIP_ADDRESS_LENGTH)) {
-        warning("[TREE] DROP; Packet from invalid rootid\n");
-        goto out;
-      }
+    cp_selected = conduits_conduit_peer_search( everip_conduits()
+                                              , &criteria
+                                              , false /* no netsearch */
+                                              , in__everip_dst );
+
+    if (!cp_selected) {
+
       if (tol_everip_for_route(mod, in__dst_binrep, everip_addr_route))
         goto out;
-      warning( "ROUTING REQUEST VIA [%W]\n"
-           , everip_addr_route
-           , EVERIP_ADDRESS_LENGTH );
 
-      mnode = magi_node_lookup_by_eipaddr(everip_magi(), everip_addr_route );
-      if (!mnode) {
-        error("_sendto_virtual: hmm, no magi record!\n");
+      warning( "ROUTING REQUEST VIA [%W]\n"
+             , everip_addr_route
+             , EVERIP_ADDRESS_LENGTH );
+
+      cp_selected = conduits_conduit_peer_search( everip_conduits()
+                                                , &criteria
+                                                , false /* no netsearch */
+                                                , everip_addr_route );
+
+      if (!cp_selected) {
         goto out;
       }
     }
 
     mbuf_set_pos(mb, pos_top);
 
-    /* send packet via ledbat */
-    magi_node_ledbat_send(mnode, mb, MAGI_LEDBAT_PORT_TREEOFLIFE);
+    conduit_peer_encrypted_send( cp_selected
+                               , FRAME_TYPE_TREEOFLIFE
+                               , mb );
 
   }
 

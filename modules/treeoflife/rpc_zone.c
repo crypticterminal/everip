@@ -49,6 +49,8 @@ int tol_command_send_zone( struct this_module *mod
 
   odict_alloc(&od, 8);
 
+  odict_entry_add( od, "v", ODICT_INT, (int64_t)TOL_VERSION_ID);
+
   odict_entry_add( od, "zoneid", ODICT_INT, (int64_t)0);
   odict_entry_add( od
                  , "root"
@@ -105,6 +107,13 @@ int tol_command_cb_zone( struct this_module *mod
   const struct odict_entry *ode;
 
   /* get all of our items */
+
+  ode = odict_lookup(rpc->in, "v");
+  if (!ode || ode->type != ODICT_INT || ode->u.integer != TOL_VERSION_ID) {
+    err = EPROTO;
+    goto out;
+  }
+
   ode = odict_lookup(rpc->in, "zoneid");
   if (!ode || ode->type != ODICT_INT) {
     err = EPROTO;

@@ -20,6 +20,13 @@
 
 #include "tol.h"
 
+int tol_command_send( struct this_module *mod
+                    , struct pl *method
+                    , void *arg )
+{
+
+}
+
 int tol_command_callback( struct magi_melchior_rpc *rpc
                         , struct pl *method
                         , void *arg )

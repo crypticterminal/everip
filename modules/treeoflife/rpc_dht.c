@@ -96,6 +96,7 @@ int tol_command_send_dht_notify( const uint8_t everip_forward[EVERIP_ADDRESS_LEN
 
   odict_entry_add( od_dht, "mode", ODICT_STRING, &(struct pl)PL("notify"));
 
+  odict_entry_add( od_dht, "v", ODICT_INT, (int64_t)TOL_VERSION_ID);
   odict_entry_add( od_dht, "zoneid", ODICT_INT, (int64_t)zoneid);
 
   odict_entry_add( od_dht
@@ -154,6 +155,7 @@ int tol_command_send_dht_found( const uint8_t everip_forward[EVERIP_ADDRESS_LENG
 
   odict_entry_add( od_dht, "mode", ODICT_STRING, &(struct pl)PL("found"));
 
+  odict_entry_add( od_dht, "v", ODICT_INT, (int64_t)TOL_VERSION_ID);
   odict_entry_add( od_dht, "zoneid", ODICT_INT, (int64_t)zoneid);
 
   odict_entry_add( od_dht
@@ -217,6 +219,7 @@ int tol_command_send_dht_aquire( const uint8_t everip_forward[EVERIP_ADDRESS_LEN
 
   odict_entry_add( od_dht, "mode", ODICT_STRING, &(struct pl)PL("aquire"));
 
+  odict_entry_add( od_dht, "v", ODICT_INT, (int64_t)TOL_VERSION_ID);
   odict_entry_add( od_dht, "zoneid", ODICT_INT, (int64_t)zoneid);
 
   odict_entry_add( od_dht
@@ -282,6 +285,12 @@ int tol_command_cb_dht( struct this_module *mod
     [X] mode
 
   */
+
+  ode = odict_lookup(rpc->in, "v");
+  if (!ode || ode->type != ODICT_INT || ode->u.integer != TOL_VERSION_ID) {
+    err = EPROTO;
+    goto out;
+  }
 
   ode = odict_lookup(rpc->in, "zoneid");
   if (!ode || ode->type != ODICT_INT) {

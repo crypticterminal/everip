@@ -88,12 +88,12 @@ int tol_everip_for_route( struct this_module *mod
 
 /**/
 
-int treeoflife_ledbat_recv( struct mbuf *mb )
+int treeoflife_conduit_incoming( struct conduit_peer *cp, struct mbuf *mb )
 {
   /* trampoline */
   if (!g_mod)
     return 0;
-  return tol_conduit_incoming(g_mod, mb);
+  return tol_conduit_incoming(g_mod, cp, mb);
 }
 
 uint16_t tol_get_childid(struct this_module *mod)
@@ -179,13 +179,6 @@ static bool tol_magi_node_apply_h(const struct magi_e2e_event *event, void *arg)
   if (event->status != MAGI_NODE_STATUS_OPERATIONAL)
     goto out;
 
-  /*
-   * check if we have a conduit peer here... 
-   * and if we do, cut out
-   */
-  if (tol_peer_lookup_byeverip(mod, event->everip_addr))
-    goto out;
-
   tol_command_send_zone(mod, event->everip_addr);
 
 out:
@@ -199,11 +192,6 @@ static void tol_maintain_tmr_cb(void *data)
   /*treeoflife_command_send_zone(tol_c, peer->cp.everip_addr);*/
 
   /*error("[TREE] tol_maintain_tmr_cb\n");*/
-
-  /*
-   * get list from magi, but only actually send to nodes
-   * that we have not issued as conduit_peers;
-   */
 
   magi_node_apply(everip_magi(), &tol_magi_node_apply_h, mod);
 
@@ -314,13 +302,16 @@ static void module_destructor(void *data)
 
   list_flush(&mod->all_neighbors);
 
-  mod->conduit = mem_deref( mod->conduit );
-
   hash_flush(mod->peers_addr);
   mod->peers_addr = mem_deref( g_mod->peers_addr );
 
   tmr_cancel(&mod->tmr_maintain);
   tmr_cancel(&mod->tmr_maintain_children);
+
+  mod->conduit = conduits_unregister( mod->conduit );
+  /* are we still holding onto it? */
+  if (mod->conduit)
+    mod->conduit = mem_deref( mod->conduit );
 }
 
 static int module_init(void)
@@ -376,6 +367,8 @@ static int module_init(void)
     goto out;
   }
 
+  mem_ref( g_mod->conduit );
+
   conduit_register_debug_handler( g_mod->conduit
                                 , tol_conduit_debug
                                 , g_mod );
@@ -387,8 +380,6 @@ static int module_init(void)
   conduit_register_send_handler( g_mod->conduit
                                , tol_conduit_sendto_virtual
                                , g_mod);
-
-  mem_ref( g_mod->conduit );
 
   /* timer for maintain */
 

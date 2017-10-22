@@ -119,7 +119,7 @@ int tol_conduit_sendto_virtual( struct conduit_peer *peer
                               , struct mbuf *mb
                               , void *arg );
 
-int tol_conduit_incoming( struct this_module *mod, struct mbuf *mb );
+int tol_conduit_incoming( struct this_module *mod, struct conduit_peer *cp, struct mbuf *mb );
 
 /**/
 
