@@ -30,6 +30,7 @@ struct magi {
   struct tmr maintenance;
 
   struct magi_eventdriver *ed;
+  struct ledbat *ledbat;
 };
 
 struct magi_node {
@@ -276,11 +277,11 @@ static void magi_node_destructor(void *data)
 {
   struct magi_node *mnode = data;
 
+  (void)magi_node_status_update(mnode, MAGI_NODE_STATUS_REMOVAL);
+
   list_unlink(&mnode->le);
   list_unlink(&mnode->le_idx_key);
   list_unlink(&mnode->le_idx_addr);
-
-  (void)magi_node_status_update(mnode, MAGI_NODE_STATUS_REMOVAL);
 
   mnode->ls = mem_deref( mnode->ls );
   mnode->mb = mem_deref(mnode->mb);
@@ -501,6 +502,8 @@ static void magi_destructor(void *data)
   magi->idx_key = mem_deref( magi->idx_key );
   magi->idx_addr = mem_deref( magi->idx_addr );
 
+  magi->ledbat = mem_deref( magi->ledbat );
+
   tmr_cancel(&magi->maintenance);
 }
 
@@ -526,6 +529,9 @@ int magi_alloc(struct magi **magip, struct magi_eventdriver *med)
 
   magi->ed = med;
   mem_ref(magi->ed);
+
+  magi->ledbat = everip_ledbat();
+  mem_ref( magi->ledbat );
 
   tmr_start(&magi->maintenance, 1000, magi_maintenance_cb, magi);
 

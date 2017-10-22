@@ -701,6 +701,8 @@ static void conduits_destructor(void *data)
   hash_flush(conduits->hash_cp_addr);
   conduits->hash_cp_addr = mem_deref( conduits->hash_cp_addr );
 
+  conduits->ed = mem_deref( conduits->ed );
+
   tmr_cancel( &conduits->beacon );
 }
 
@@ -718,6 +720,7 @@ int conduits_init( struct conduits **conduitsp
     return ENOMEM;
 
   conduits->ed = ed;
+  mem_ref(conduits->ed);
 
   hash_alloc(&conduits->hash_cp_addr, 16);
 

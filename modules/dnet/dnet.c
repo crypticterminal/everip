@@ -29,6 +29,9 @@ struct this_module {
   struct conduit *conduit;
   struct list peers;
   struct hash *peers_addr;
+
+  /**/
+  struct magi *magi;
 };
 
 static struct this_module *g_mod = NULL;
@@ -84,7 +87,8 @@ static int _peer_alloc( struct mod_peer **tpp
 
   if (tp) {
     *tpp = tp;
-    return EALREADY;
+    err = EALREADY;
+    goto out;
   }
 
   tp = mem_zalloc(sizeof(*tp), _peer_destructor);
@@ -94,7 +98,6 @@ static int _peer_alloc( struct mod_peer **tpp
   tp->ctx = mod;
 
   memcpy(tp->cp.everip_addr, everip, EVERIP_ADDRESS_LENGTH);
-  tp->cp.conduit = mod->conduit;
 
   list_append( &mod->peers, &tp->le_mod, tp);
   hash_append( mod->peers_addr
@@ -102,14 +105,15 @@ static int _peer_alloc( struct mod_peer **tpp
              , &tp->le_mod_addr
              , tp);
 
-  err = conduit_peer_initiate( &tp->cp
-                             , NULL /* no key */
-                             , false /* no handshake */
-                             );
-
-  if (err) {
+out:
+  if (err && err != EALREADY) {
     tp = mem_deref(tp);
   } else {
+    tp->cp.conduit = mod->conduit;
+    err = conduit_peer_initiate( &tp->cp
+                               , NULL /* no key */
+                               , false /* no handshake */
+                               );
     *tpp = tp;
   }
   return err;
@@ -417,7 +421,7 @@ int dnet_conduit_incoming( struct conduit_peer *cp, struct mbuf *mb )
     err = conduit_incoming(g_mod->conduit, &p->cp, mb);
 
     if (err) {
-      if (err == EPROTO) {
+      if (err != EALREADY) {
         p = mem_deref( p );
       }
     } else {
@@ -464,7 +468,7 @@ static void module_destructor(void *data)
   hash_flush(mod->peers_addr);
   mod->peers_addr = mem_deref( g_mod->peers_addr );
 
-  mem_deref( everip_magi() );
+  mod->magi = mem_deref( mod->magi );
 
   mod->conduit = conduits_unregister( mod->conduit );
   /* are we still holding onto it? */
@@ -487,7 +491,8 @@ static int module_init(void)
     return EINVAL;
 
   /* reference magi */
-  mem_ref( everip_magi() );
+  g_mod->magi = everip_magi();
+  mem_ref( g_mod->magi );
 
   memcpy(g_mod->my_public_key, everip_noise()->si.public, NOISE_PUBLIC_KEY_LEN);
 

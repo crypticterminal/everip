@@ -587,12 +587,12 @@ skip_tun:
 
   /* conduits*/
   module_preload("null");
-  /*module_preload("udp");*/
-  /*module_preload("udpd");*/
+  module_preload("udp");
+  module_preload("udpd");
   module_preload("web");
 
   /* virtual conduits */
-  /*module_preload("dnet");*/
+  module_preload("dnet");
   /*module_preload("treeoflife");*/
 
 #if defined(HAVE_GENDO)

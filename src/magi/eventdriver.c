@@ -20,6 +20,7 @@
 
 struct magi_eventdriver {
   struct list handlers[MAGI_EVENTDRIVER_WATCH_MAXIMUM];
+  struct ledbat *ledbat;
 };
 
 struct magi_eventdriver_handler {
@@ -106,6 +107,9 @@ static void magi_eventdriver_destructor(void *data)
   for (int i = 0; i < MAGI_EVENTDRIVER_WATCH_MAXIMUM; ++i) {
     list_flush( _grab_handler(ed, i) );
   }
+
+  ed->ledbat = mem_deref( ed->ledbat );
+
 }
 
 int magi_eventdriver_alloc(struct magi_eventdriver **edp)
@@ -118,6 +122,9 @@ int magi_eventdriver_alloc(struct magi_eventdriver **edp)
   ed = mem_zalloc(sizeof(*ed), magi_eventdriver_destructor);
   if (!ed)
     return ENOMEM;
+
+  ed->ledbat = everip_ledbat();
+  mem_ref(ed->ledbat);
 
   for (int i = 0; i < MAGI_EVENTDRIVER_WATCH_MAXIMUM; ++i) {
     list_init( _grab_handler(ed, i) );

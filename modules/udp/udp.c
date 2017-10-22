@@ -196,7 +196,7 @@ static void _recv_handler( struct udp_engine *ue
   err = conduit_incoming(ue->conduit, &up->cp, mb);
 
   if (err) {
-    if (err == EPROTO) {
+    if (err != EALREADY) {
       up = mem_deref( up );
     }
   } else if (is_bcast) {
