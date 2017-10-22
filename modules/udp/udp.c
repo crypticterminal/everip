@@ -116,52 +116,6 @@ static void udp_peer_destructor(void *data)
   list_unlink(&up->le);
 }
 
-static int _peer_create( struct conduit_peer **peerp
-                       , struct pl *key
-                       , struct pl *host
-                       , void *arg)
-{
-  struct sa laddr;
-  struct udp_peer *up = NULL;
-  struct udp_engine *ue = arg;
-
-  if (!key || !host)
-    return EINVAL;
-
-  debug("_peer_create\n");
-
-  (void)key;
-  (void)arg;
-
-  if (sa_decode(&laddr, host->p, host->l)) {
-    if (sa_set(&laddr, host, 1988)) {
-      error("Error: Invalid IP Address <%r>\n", host);
-      return EINVAL;
-    }
-  }
-
-  up = list_ledata(hash_lookup( ue->peers
-                              , sa_hash(&laddr, SA_ALL)
-                              , _peer_handler
-                              , &laddr));
-
-  if (!up) {
-    up = mem_zalloc(sizeof(*up), udp_peer_destructor);
-    if (!up)
-      return ENOMEM;
-    sa_cpy(&up->sa, &laddr);
-    up->cp.conduit = ue->conduit;
-    hash_append(ue->peers, sa_hash(&laddr, SA_ALL), &up->le, up);
-  }
-
-  debug("registering %J on UDP;\n", &up->sa);
-
-  *peerp = &up->cp;
-
-  return 0;
-}
-
-
 /* ----------- udp rx code ----------- */
 
 static void _recv_handler( struct udp_engine *ue
@@ -375,10 +329,6 @@ static int udp_engine_alloc( struct udp_engine **uep
   }
 
   mem_ref( ue->conduit );
-
-  conduit_register_peer_create( ue->conduit
-                              , _peer_create
-                              , ue);
 
   conduit_register_send_handler( ue->conduit
                                , _sendto_outside
