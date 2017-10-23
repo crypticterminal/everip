@@ -189,32 +189,32 @@ static bool _session_debug(struct le *le, void *arg)
 {
   struct re_printf *pf = arg;
   struct noise_session *ns = le->data;
-  re_hprintf( pf, "→ %W [CH:%p][%s][TX=%zu][RX=%zu][REF:%zu]\n"
+  re_hprintf( pf, "→ %W [CH:%p][%s][TX=%llu][RX=%llu][REF:%zu]\n"
             , ns->handshake.remote_static, NOISE_PUBLIC_KEY_LEN
             , ns->channel_lock
             , noise_session_event_tostr(ns->event_last)
-            , ns->tx_bytes
-            , ns->rx_bytes
+            , (unsigned long long)ns->tx_bytes
+            , (unsigned long long)ns->rx_bytes
             , mem_nrefs(ns)
             );
 
 
   if (ns->keypair_now) {
-    re_hprintf( pf, "\t{KEY:NOW} [TX=%zu][RX=%zu]\n"
-              , ns->keypair_now->tx_bytes
-              , ns->keypair_now->rx_bytes
+    re_hprintf( pf, "\t{KEY:NOW} [TX=%llu][RX=%llu]\n"
+              , (unsigned long long)ns->keypair_now->tx_bytes
+              , (unsigned long long)ns->keypair_now->rx_bytes
               );
   }
   if (ns->keypair_then) {
-    re_hprintf( pf, "\t{KEY:THEN} [TX=%zu][RX=%zu]\n"
-              , ns->keypair_then->tx_bytes
-              , ns->keypair_then->rx_bytes
+    re_hprintf( pf, "\t{KEY:THEN} [TX=%llu][RX=%llu]\n"
+              , (unsigned long long)ns->keypair_then->tx_bytes
+              , (unsigned long long)ns->keypair_then->rx_bytes
               );
   }
   if (ns->keypair_next) {
-    re_hprintf( pf, "\t{KEY:NEXT} [TX=%zu][RX=%zu]\n"
-              , ns->keypair_next->tx_bytes
-              , ns->keypair_next->rx_bytes
+    re_hprintf( pf, "\t{KEY:NEXT} [TX=%llu][RX=%llu]\n"
+              , (unsigned long long)ns->keypair_next->tx_bytes
+              , (unsigned long long)ns->keypair_next->rx_bytes
               );
   }
 

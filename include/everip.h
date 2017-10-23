@@ -714,13 +714,13 @@ static inline int conduit_peer_debug(struct re_printf *pf, struct conduit_peer *
   ns = list_ledata(peer->lsock.l.head);
   err = noise_session_counters(ns, &nsc);
 
-  err  = re_hprintf(pf, "[%j][%p][%s][SCORE=%u][TX=%zu][RX=%zu]"
+  err  = re_hprintf(pf, "[%j][%p][%s][SCORE=%llu][TX=%llu][RX=%llu]"
                       , &laddr
                       , ns
                       , noise_session_event_tostr(peer->ns_last_event)
-                      , noise_session_score(ns)
-                      , nsc.tx_bytes
-                      , nsc.rx_bytes
+                      , (unsigned long long)noise_session_score(ns)
+                      , (unsigned long long)nsc.tx_bytes
+                      , (unsigned long long)nsc.rx_bytes
                       );
   return err;
 }
